@@ -6,6 +6,7 @@ use rmcp::ServiceExt;
 use memorize_mcp::embedding::Embedder;
 use memorize_mcp::server::MemorizeServer;
 use memorize_mcp::storage::Storage;
+use memorize_mcp::transport::ResilientStdioTransport;
 
 struct Args {
     transport: String,
@@ -109,8 +110,18 @@ async fn main() -> Result<()> {
     match args.transport.as_str() {
         "stdio" => {
             tracing::info!("Starting stdio transport");
-            let service = server.serve(rmcp::transport::stdio()).await?;
-            service.waiting().await?;
+            let transport = ResilientStdioTransport::new();
+            let service = server.serve(transport).await?;
+            match service.waiting().await {
+                Ok(reason) => {
+                    tracing::info!("Client disconnected: {:?}", reason);
+                }
+                Err(e) => {
+                    // Client disconnect or malformed message is not a fatal error
+                    // for stdio — the pipe is gone, just log and exit gracefully.
+                    tracing::warn!("Stdio transport closed: {}", e);
+                }
+            }
         }
         "http" => {
             use rmcp::transport::streamable_http_server::{
