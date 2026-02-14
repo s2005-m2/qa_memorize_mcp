@@ -12,6 +12,141 @@ use crate::embedding::Embedder;
 use crate::models::*;
 use crate::storage::Storage;
 
+// ── Server Instructions ──
+// 服务器级说明书，注入 LLM system prompt。纯英文发给 AI，中文注释仅供人类阅读。
+
+const SERVER_INSTRUCTIONS: &str = concat!(
+    // 标题
+    "## Memorize MCP — Tool Usage Manual\n",
+    "\n",
+    // 角色定义：你连接了一个基于 RAG 的长期记忆服务器
+    "### Role\n",
+    "You are connected to a RAG-based long-term memory server. ",
+    "Use it to persist verified knowledge as QA pairs, ",
+    "retrieve relevant context from past interactions, ",
+    "and consolidate overlapping information into refined knowledge entries.\n",
+    "\n",
+    // 工具调用原则
+    "### Tool Invocation Principles\n",
+    // 1. 先查后存：store 之前必须先 query 检查是否已有相似知识
+    "1. **Query before Store**: Always call `query_qa` first to check if similar knowledge already exists. ",
+    "Only call `store_qa` when no sufficiently relevant result is found (score > 0.80 means a match exists).\n",
+    // 2. 原子化 QA：每次只存一问一答，不要把多个事实塞进同一条
+    "2. **Atomic QA pairs**: Each `store_qa` call should contain exactly ONE question and ONE answer. ",
+    "Do not bundle multiple facts into a single QA pair — split them.\n",
+    // 3. 主题粒度一致：用宽泛可复用的主题名，服务器按语义相似度(0.80)自动去重
+    "3. **Consistent topic granularity**: Use broad, reusable topic names ",
+    "(e.g. \"Rust Programming\", \"Project Architecture\") ",
+    "rather than overly specific ones (e.g. \"Rust Ownership Question 3\"). ",
+    "The server deduplicates topics by semantic similarity (threshold 0.80), but consistent naming helps.\n",
+    // 4. context 字段决定搜索哪个主题，填知识领域短语而非完整对话历史
+    "4. **Context field matters**: In `query_qa`, the `context` field determines which topic to search in. ",
+    "Provide a short phrase describing the knowledge domain, not the full conversation history.\n",
+    // 5. 定期合并：主题积累 10+ 条 QA 时调用 merge_knowledge，需要客户端支持 sampling
+    "5. **Merge periodically**: Call `merge_knowledge` when a topic accumulates many QA pairs (10+). ",
+    "This consolidates redundant entries into concise knowledge summaries via LLM synthesis. ",
+    "Requires sampling capability from the MCP client.\n",
+    "\n",
+    // 工作流
+    "### Workflow\n",
+    "```\n",
+    // 用户提问 → 总是先检索
+    "User asks a question\n",
+    "       │\n",
+    "       ▼\n",
+    "  query_qa(question=..., context=...)  ← always try retrieval first\n",
+    "       │\n",
+    // score < 0.5 弱匹配 → 用自身知识回答
+    "       ├─ Results found (score < 0.5 = weak match) → answer from your own knowledge\n",
+    // score ≥ 0.5 强匹配 → 用检索结果增强回答
+    "       ├─ Results found (score ≥ 0.5) → use retrieved QA to enhance your answer\n",
+    // 无结果 → 正常回答
+    "       └─ No results → answer normally\n",
+    "       │\n",
+    "       ▼\n",
+    // 如果对话中产生了新的已验证知识 → 存储
+    "  If new verified knowledge was produced during the conversation:\n",
+    "  store_qa(question=..., answer=..., topic=...)\n",
+    "       │\n",
+    "       ▼\n",
+    // 定期或用户要求时 → 合并相似 QA 对
+    "  Periodically (or on user request):\n",
+    "  merge_knowledge(topic=...)  → consolidates similar QA pairs\n",
+    "```\n",
+    "\n",
+    // 资源模板：只读访问已合并的知识条目，适合被动上下文注入
+    "### Resource Template\n",
+    "`knowledge://{topic}/{query}` — Read-only access to merged knowledge entries. ",
+    "Use this for passive context injection rather than active tool calls. ",
+    "Returns up to 5 results ranked by semantic similarity.\n",
+    "\n",
+    // 返回格式说明
+    "### Response Format\n",
+    // store_qa 返回已解析的主题名，可能因语义去重而与输入不同
+    "- `store_qa` returns: `{\"status\": \"stored\", \"topic\": \"<resolved_topic>\"}` ",
+    "The resolved_topic may differ from your input if a semantically similar topic already existed.\n",
+    // query_qa 返回 QA 数组，score 是 L2 距离（越小越相似）
+    "- `query_qa` returns: array of `{\"question\", \"answer\", \"topic\", \"merged\", \"score\"}` ",
+    "where score is L2 distance (lower = more similar, 0.0 = exact match, >1.0 = weak match).\n",
+    // merge_knowledge 返回合并摘要
+    "- `merge_knowledge` returns: merge summary with count of consolidated pairs per topic.\n",
+    "\n",
+    // 约束条件
+    "### Constraints\n",
+    // 所有文本在本地向量化（384 维 ONNX），不调用外部 API
+    "- All text is embedded locally (384-dim ONNX model). No external API calls for embedding.\n",
+    // merge_knowledge 需要客户端支持 sampling，否则会失败
+    "- `merge_knowledge` requires the MCP client to support sampling (createMessage). ",
+    "It will fail if sampling is unavailable.\n",
+    // 合并时每个主题最多扫描 100 条 QA，主题很大时需多次运行
+    "- Maximum 100 QA pairs scanned per topic during merge. For very large topics, run merge multiple times.\n",
+);
+
+// ── Tool Descriptions ──
+// 工具描述，出现在 tools/list 响应中
+
+// 持久化已验证的 QA 对到长期记忆。主题按语义自动去重(≥0.80)。
+// 重要：存之前先调 query_qa 检查。只存已验证的事实，不存推测性内容。
+const STORE_QA_DESC: &str = "\
+Persist a verified question-answer pair to long-term memory under a semantic topic. \
+Topics are automatically deduplicated: if a semantically similar topic already exists (cosine similarity ≥ 0.80), \
+the existing topic name is reused instead of creating a duplicate. \
+IMPORTANT: Call query_qa first to check for existing knowledge before storing. \
+Only store facts that have been verified or confirmed — do not store speculative or uncertain information.";
+
+// 两阶段语义搜索：先用 context 定位主题，再用 question 在主题内搜索。
+// 返回最多 5 条结果，score 是 L2 距离（0.0=精确匹配，>1.0=弱匹配）。
+// 应在 store_qa 之前调用以避免重复，也用于为用户问题检索上下文。
+const QUERY_QA_DESC: &str = "\
+Search long-term memory for relevant QA pairs using semantic similarity. \
+The search is two-phase: first, the `context` field is used to identify the most relevant topic; \
+then, the `question` field is used to find matching QA pairs within that topic. \
+Returns up to 5 results sorted by relevance. Each result includes a `score` field (L2 distance): \
+0.0 = exact match, < 0.5 = strong match, 0.5–1.0 = moderate match, > 1.0 = weak/no match. \
+Use this tool BEFORE store_qa to avoid duplicates, and to retrieve context for answering user questions.";
+
+// 将主题内语义相似的 QA 对聚类，通过 MCP sampling 调用 LLM 合并为精炼知识条目。
+// 已合并的 QA 会被标记，不再出现在 query_qa 结果中。
+// 需要客户端支持 sampling。适用于主题积累 10+ 条 QA 或 query_qa 返回大量重叠结果时。
+const MERGE_KNOWLEDGE_DESC: &str = "\
+Consolidate similar QA pairs within a topic into refined knowledge summaries using LLM synthesis. \
+Scans for QA pairs whose questions are semantically similar (above the threshold), \
+groups them into clusters, and uses MCP sampling (createMessage) to merge each cluster \
+into a single concise knowledge entry. Merged QA pairs are marked and excluded from future query_qa results. \
+REQUIRES: The MCP client must support sampling capability. \
+WHEN TO USE: When a topic has accumulated 10+ QA pairs, or when query_qa returns many overlapping results. \
+Omit the `topic` parameter to scan all topics at once.";
+
+// 按主题和查询语义检索已合并的知识条目（merge_knowledge 的产物）。
+// 与 query_qa 不同，这里访问的是精炼去重后的知识，适合被动上下文注入。
+const KNOWLEDGE_RESOURCE_DESC: &str = "\
+Search merged knowledge entries by topic and query using semantic similarity. \
+Returns up to 5 consolidated knowledge summaries ranked by relevance. \
+Unlike query_qa (which searches raw QA pairs), this resource accesses the refined, \
+deduplicated knowledge produced by merge_knowledge. \
+Use this for passive context enrichment — the MCP client can auto-inject these results \
+without an explicit tool call.";
+
 #[derive(Clone)]
 pub struct MemorizeServer {
     storage: Arc<Storage>,
@@ -258,9 +393,7 @@ impl MemorizeServer {
 impl ServerHandler for MemorizeServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
-            instructions: Some(
-                "RAG-based memory server for persistent QA storage and knowledge fusion".into(),
-            ),
+            instructions: Some(SERVER_INSTRUCTIONS.into()),
             capabilities: ServerCapabilities::builder()
                 .enable_tools()
                 .enable_resources()
@@ -287,9 +420,7 @@ impl ServerHandler for MemorizeServer {
                 Tool {
                     name: "store_qa".into(),
                     title: None,
-                    description: Some(
-                        "Store a question-answer pair under a topic. Topics are deduplicated by semantic similarity.".into(),
-                    ),
+                    description: Some(STORE_QA_DESC.into()),
                     input_schema: schema_for_type::<StoreQaParams>(),
                     output_schema: None,
                     annotations: None,
@@ -300,9 +431,7 @@ impl ServerHandler for MemorizeServer {
                 Tool {
                     name: "query_qa".into(),
                     title: None,
-                    description: Some(
-                        "Search for relevant QA pairs by question, using context to find the right topic.".into(),
-                    ),
+                    description: Some(QUERY_QA_DESC.into()),
                     input_schema: schema_for_type::<QueryQaParams>(),
                     output_schema: None,
                     annotations: None,
@@ -313,9 +442,7 @@ impl ServerHandler for MemorizeServer {
                 Tool {
                     name: "merge_knowledge".into(),
                     title: None,
-                    description: Some(
-                        "Merge similar QA pairs into consolidated knowledge entries using LLM sampling.".into(),
-                    ),
+                    description: Some(MERGE_KNOWLEDGE_DESC.into()),
                     input_schema: schema_for_type::<MergeKnowledgeParams>(),
                     output_schema: None,
                     annotations: None,
@@ -383,9 +510,7 @@ impl ServerHandler for MemorizeServer {
                 uri_template: "knowledge://{topic}/{query}".into(),
                 name: "Knowledge Base".into(),
                 title: Some("Knowledge Base Search".into()),
-                description: Some(
-                    "Search merged knowledge entries by topic and query".into(),
-                ),
+                description: Some(KNOWLEDGE_RESOURCE_DESC.into()),
                 mime_type: Some("application/json".into()),
                 icons: None,
             }
