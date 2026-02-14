@@ -14,7 +14,7 @@ struct Args {
     model_dir: String,
 }
 
-fn parse_args() -> Args {
+fn parse_args() -> Result<Args> {
     let args: Vec<String> = std::env::args().collect();
     let mut transport = "stdio".to_string();
     let mut port: u16 = 8080;
@@ -33,7 +33,12 @@ fn parse_args() -> Args {
             "--port" => {
                 i += 1;
                 if i < args.len() {
-                    port = args[i].parse().expect("--port must be a number");
+                    port = args[i].parse().map_err(|_| {
+                        anyhow::anyhow!(
+                            "--port value '{}' is not a valid port number (expected 0-65535)",
+                            args[i]
+                        )
+                    })?;
                 }
             }
             "--db-path" => {
@@ -67,12 +72,12 @@ fn parse_args() -> Args {
         i += 1;
     }
 
-    Args {
+    Ok(Args {
         transport,
         port,
         db_path,
         model_dir,
-    }
+    })
 }
 
 #[tokio::main]
@@ -86,7 +91,7 @@ async fn main() -> Result<()> {
         .with_ansi(false)
         .init();
 
-    let args = parse_args();
+    let args = parse_args()?;
 
     tracing::info!("Loading embedding model from {}", args.model_dir);
     let embedder = Arc::new(Embedder::load(
@@ -130,7 +135,9 @@ async fn main() -> Result<()> {
             let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
             axum::serve(listener, router)
                 .with_graceful_shutdown(async move {
-                    tokio::signal::ctrl_c().await.unwrap();
+                    if let Err(e) = tokio::signal::ctrl_c().await {
+                        tracing::error!("Failed to listen for Ctrl+C: {}", e);
+                    }
                     ct.cancel();
                 })
                 .await?;

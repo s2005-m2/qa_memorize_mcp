@@ -1,20 +1,30 @@
+use std::sync::{Mutex, OnceLock};
+
 use anyhow::{anyhow, Result};
 use ort::session::{builder::GraphOptimizationLevel, Session};
 use ort::value::TensorRef;
-use std::sync::{Mutex, Once};
 use tokenizers::Tokenizer;
 
-static ORT_INIT: Once = Once::new();
+static ORT_INIT: OnceLock<Result<(), String>> = OnceLock::new();
 
-fn ensure_ort_init() {
-    ORT_INIT.call_once(|| {
+fn ensure_ort_init() -> Result<()> {
+    let result = ORT_INIT.get_or_init(|| {
         // The system has an old onnxruntime.dll (v1.17) in System32.
         // We must load the pip-installed v1.24+ DLL explicitly before any ort API call.
-        let dll_path = find_onnxruntime_dll().expect("Could not find onnxruntime.dll >= 1.23");
-        ort::init_from(&dll_path)
-            .expect("Failed to load onnxruntime DLL")
-            .commit();
+        let dll_path = find_onnxruntime_dll().map_err(|e| e.to_string())?;
+        let builder = ort::init_from(&dll_path).map_err(|e| {
+            format!(
+                "Failed to load ONNX Runtime library from '{}': {}",
+                dll_path, e
+            )
+        })?;
+        builder.commit();
+        Ok(())
     });
+    match result {
+        Ok(()) => Ok(()),
+        Err(msg) => Err(anyhow!("{}", msg)),
+    }
 }
 
 fn ort_lib_name() -> &'static str {
@@ -85,7 +95,14 @@ pub struct Embedder {
 
 impl Embedder {
     pub fn load(model_path: &str, tokenizer_path: &str) -> Result<Self> {
-        ensure_ort_init();
+        ensure_ort_init().map_err(|e| {
+            anyhow!(
+                "ONNX Runtime initialization failed: {}. \
+             Ensure ONNX Runtime >= 1.23 is available via ORT_DYLIB_PATH, \
+             next to the executable, or `pip install onnxruntime`.",
+                e
+            )
+        })?;
         let session = Session::builder()
             .map_err(|e| anyhow!("Failed to create session builder: {}", e))?
             .with_optimization_level(GraphOptimizationLevel::Level3)
