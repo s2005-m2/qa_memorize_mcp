@@ -10,3 +10,5 @@
 /embedding_model/*.onnx_data
 /embedding_model/*.txt
 /embedding_model/tokenizer_tmp/
+/dist
+*.zip

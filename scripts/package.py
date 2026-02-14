@@ -81,7 +81,7 @@ def download_ort(plat, version, cache_dir):
     return cached
 
 
-def extract_lib(archive_path, plat, version):
+def extract_lib(archive_path, plat, version, dest_dir):
     info = PLATFORMS[plat]
     prefix = info["prefix"].format(ver=version)
     lib_rel = f"{prefix}/{info['lib']}"
@@ -96,8 +96,8 @@ def extract_lib(archive_path, plat, version):
                 tf.extract(member, tmp)
 
         extracted = os.path.join(tmp, lib_rel)
-        dest = os.path.join(tmp, os.path.basename(info["lib"]))
-        shutil.move(extracted, dest)
+        dest = os.path.join(dest_dir, os.path.basename(info["lib"]))
+        shutil.copy2(extracted, dest)
         return dest
 
 
@@ -123,10 +123,8 @@ def package(plat, version, build, output_dir):
     print(f"Copying binary: {info['binary']}")
     shutil.copy2(binary_src, os.path.join(output_dir, info["binary"]))
 
-    lib_path = extract_lib(archive, plat, version)
-    lib_name = os.path.basename(lib_path)
-    print(f"Copying library: {lib_name}")
-    shutil.copy2(lib_path, os.path.join(output_dir, lib_name))
+    lib_path = extract_lib(archive, plat, version, output_dir)
+    print(f"Copying library: {os.path.basename(lib_path)}")
 
     model_dir_src = os.path.join(project_root, "embedding_model")
     model_dir_dst = os.path.join(output_dir, "embedding_model")
