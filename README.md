@@ -116,7 +116,7 @@ HTTP 模式：
 |------|--------|------|
 | `--transport` | `stdio` | 传输模式：`stdio` 或 `http` |
 | `--port` | `8080` | HTTP 模式监听端口 |
-| `--db-path` | `./data` | LanceDB 数据库路径 |
+| `--db-path` | `~/.memorize-mcp` | LanceDB 数据库路径及 JSON 快照目录 |
 | `--model-dir` | `./embedding_model` | Embedding 模型目录 |
 
 ### Claude Desktop 配置
@@ -125,12 +125,13 @@ HTTP 模式：
 {
   "mcpServers": {
     "memorize": {
-      "command": "/path/to/memorize_mcp",
-      "args": ["--db-path", "/path/to/data"]
+      "command": "/path/to/memorize_mcp"
     }
   }
 }
 ```
+
+不指定 `--db-path` 时，数据自动存储在 `~/.memorize-mcp/`。
 
 ## 打包分发
 
@@ -186,6 +187,8 @@ memorize_mcp/
 │   ├── server.rs           # MCP 服务器 (3 tools + 1 resource)
 │   ├── embedding.rs        # ONNX 推理引擎
 │   ├── storage.rs          # LanceDB 存储层 (3 tables)
+│   ├── persistence.rs      # JSON 快照导出 + 启动时双向同步
+│   ├── transport.rs        # Resilient stdio transport
 │   └── models.rs           # 数据模型 + 常量
 ├── tests/
 │   └── integration.rs      # 端到端集成测试
@@ -213,13 +216,33 @@ cargo test --test integration -- --test-threads=1
 
 ## 数据存储
 
-LanceDB 在 `--db-path` 指定的目录下创建 3 张表：
+默认数据目录为 `~/.memorize-mcp/`（可通过 `--db-path` 覆盖）。
+
+### LanceDB 表
 
 | 表名 | 字段 | 说明 |
 |------|------|------|
 | `topics` | topic_name, vector | 主题及其向量表示 |
 | `qa_records` | question, answer, topic, merged, vector | QA 对 |
 | `knowledge` | knowledge_text, topic, source_questions, vector | 融合后的知识条目 |
+
+### 数据持久化与同步
+
+数据目录下同时维护两份数据：
+
+```
+~/.memorize-mcp/
+├── *.lance, ...           # LanceDB 持久化文件（程序直接读写）
+└── memorize_data.json     # 人类可读的 JSON 快照（可分享/版本控制）
+```
+
+**关闭时**：MCP 服务退出前自动将 3 张表全量导出为 `memorize_data.json`，包含所有记录及其向量。
+
+**启动时**：如果存在 `memorize_data.json`，执行双向同步：
+- JSON 中有而 LanceDB 中没有的记录 → 使用已有向量（或重新 embed）写入 LanceDB
+- LanceDB 中有而 JSON 中没有的记录 → 重新导出更新 JSON
+
+这确保了即使 LanceDB 文件损坏或丢失，也可以从 JSON 快照恢复；反之亦然。
 
 ## License
 

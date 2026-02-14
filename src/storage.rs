@@ -10,7 +10,7 @@ use futures::TryStreamExt;
 use lancedb::query::{ExecutableQuery, QueryBase};
 use std::sync::Arc;
 
-use crate::models::{KnowledgeRecord, QaRecord, VECTOR_DIM};
+use crate::models::{KnowledgeEntry, KnowledgeRecord, QaEntry, QaRecord, TopicEntry, VECTOR_DIM};
 
 fn topics_schema() -> Arc<Schema> {
     Arc::new(Schema::new(vec![
@@ -325,6 +325,252 @@ impl Storage {
             .await?;
 
         parse_knowledge_batches(&batches)
+    }
+
+    pub async fn dump_topics(&self) -> Result<Vec<TopicEntry>> {
+        let batches: Vec<RecordBatch> = self
+            .topics
+            .query()
+            .execute()
+            .await?
+            .try_collect()
+            .await?;
+
+        let mut entries = Vec::new();
+        for batch in &batches {
+            let names = batch
+                .column_by_name("topic_name")
+                .ok_or_else(|| anyhow!("missing topic_name column"))?
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .ok_or_else(|| anyhow!("topic_name is not StringArray"))?;
+
+            let vectors = batch
+                .column_by_name("vector")
+                .ok_or_else(|| anyhow!("missing vector column"))?
+                .as_any()
+                .downcast_ref::<FixedSizeListArray>()
+                .ok_or_else(|| anyhow!("vector is not FixedSizeListArray"))?;
+
+            for i in 0..batch.num_rows() {
+                let vec_arr = vectors.value(i);
+                let floats = vec_arr
+                    .as_any()
+                    .downcast_ref::<Float32Array>()
+                    .ok_or_else(|| anyhow!("vector items are not Float32Array"))?;
+                let vector: Vec<f32> = (0..floats.len()).map(|j| floats.value(j)).collect();
+
+                entries.push(TopicEntry {
+                    topic_name: names.value(i).to_string(),
+                    vector: Some(vector),
+                });
+            }
+        }
+        Ok(entries)
+    }
+
+    pub async fn dump_qa(&self) -> Result<Vec<QaEntry>> {
+        let batches: Vec<RecordBatch> = self
+            .qa_records
+            .query()
+            .execute()
+            .await?
+            .try_collect()
+            .await?;
+
+        let mut entries = Vec::new();
+        for batch in &batches {
+            let questions = batch
+                .column_by_name("question")
+                .ok_or_else(|| anyhow!("missing question column"))?
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .ok_or_else(|| anyhow!("question is not StringArray"))?;
+
+            let answers = batch
+                .column_by_name("answer")
+                .ok_or_else(|| anyhow!("missing answer column"))?
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .ok_or_else(|| anyhow!("answer is not StringArray"))?;
+
+            let topics = batch
+                .column_by_name("topic")
+                .ok_or_else(|| anyhow!("missing topic column"))?
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .ok_or_else(|| anyhow!("topic is not StringArray"))?;
+
+            let merged = batch
+                .column_by_name("merged")
+                .ok_or_else(|| anyhow!("missing merged column"))?
+                .as_any()
+                .downcast_ref::<BooleanArray>()
+                .ok_or_else(|| anyhow!("merged is not BooleanArray"))?;
+
+            let vectors = batch
+                .column_by_name("vector")
+                .ok_or_else(|| anyhow!("missing vector column"))?
+                .as_any()
+                .downcast_ref::<FixedSizeListArray>()
+                .ok_or_else(|| anyhow!("vector is not FixedSizeListArray"))?;
+
+            for i in 0..batch.num_rows() {
+                let vec_arr = vectors.value(i);
+                let floats = vec_arr
+                    .as_any()
+                    .downcast_ref::<Float32Array>()
+                    .ok_or_else(|| anyhow!("vector items are not Float32Array"))?;
+                let vector: Vec<f32> = (0..floats.len()).map(|j| floats.value(j)).collect();
+
+                entries.push(QaEntry {
+                    question: questions.value(i).to_string(),
+                    answer: answers.value(i).to_string(),
+                    topic: topics.value(i).to_string(),
+                    merged: merged.value(i),
+                    vector: Some(vector),
+                });
+            }
+        }
+        Ok(entries)
+    }
+
+    pub async fn dump_knowledge(&self) -> Result<Vec<KnowledgeEntry>> {
+        let batches: Vec<RecordBatch> = self
+            .knowledge
+            .query()
+            .execute()
+            .await?
+            .try_collect()
+            .await?;
+
+        let mut entries = Vec::new();
+        for batch in &batches {
+            let texts = batch
+                .column_by_name("knowledge_text")
+                .ok_or_else(|| anyhow!("missing knowledge_text column"))?
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .ok_or_else(|| anyhow!("knowledge_text is not StringArray"))?;
+
+            let topics = batch
+                .column_by_name("topic")
+                .ok_or_else(|| anyhow!("missing topic column"))?
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .ok_or_else(|| anyhow!("topic is not StringArray"))?;
+
+            let source_lists = batch
+                .column_by_name("source_questions")
+                .ok_or_else(|| anyhow!("missing source_questions column"))?
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .ok_or_else(|| anyhow!("source_questions is not ListArray"))?;
+
+            let vectors = batch
+                .column_by_name("vector")
+                .ok_or_else(|| anyhow!("missing vector column"))?
+                .as_any()
+                .downcast_ref::<FixedSizeListArray>()
+                .ok_or_else(|| anyhow!("vector is not FixedSizeListArray"))?;
+
+            for i in 0..batch.num_rows() {
+                let source_arr = source_lists.value(i);
+                let source_strings = source_arr
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .ok_or_else(|| anyhow!("source_questions items are not StringArray"))?;
+                let source_questions: Vec<String> = (0..source_strings.len())
+                    .map(|j| source_strings.value(j).to_string())
+                    .collect();
+
+                let vec_arr = vectors.value(i);
+                let floats = vec_arr
+                    .as_any()
+                    .downcast_ref::<Float32Array>()
+                    .ok_or_else(|| anyhow!("vector items are not Float32Array"))?;
+                let vector: Vec<f32> = (0..floats.len()).map(|j| floats.value(j)).collect();
+
+                entries.push(KnowledgeEntry {
+                    knowledge_text: texts.value(i).to_string(),
+                    topic: topics.value(i).to_string(),
+                    source_questions,
+                    vector: Some(vector),
+                });
+            }
+        }
+        Ok(entries)
+    }
+
+    pub async fn has_topic(&self, name: &str) -> Result<bool> {
+        let batches: Vec<RecordBatch> = self
+            .topics
+            .query()
+            .only_if(format!("topic_name = '{}'", name.replace('\'', "''")))
+            .limit(1)
+            .execute()
+            .await?
+            .try_collect()
+            .await?;
+        Ok(!batches.is_empty() && batches[0].num_rows() > 0)
+    }
+
+    pub async fn has_qa(&self, question: &str, topic: &str) -> Result<bool> {
+        let batches: Vec<RecordBatch> = self
+            .qa_records
+            .query()
+            .only_if(format!(
+                "question = '{}' AND topic = '{}'",
+                question.replace('\'', "''"),
+                topic.replace('\'', "''")
+            ))
+            .limit(1)
+            .execute()
+            .await?
+            .try_collect()
+            .await?;
+        Ok(!batches.is_empty() && batches[0].num_rows() > 0)
+    }
+
+    pub async fn has_knowledge(&self, text: &str, topic: &str) -> Result<bool> {
+        let batches: Vec<RecordBatch> = self
+            .knowledge
+            .query()
+            .only_if(format!(
+                "knowledge_text = '{}' AND topic = '{}'",
+                text.replace('\'', "''"),
+                topic.replace('\'', "''")
+            ))
+            .limit(1)
+            .execute()
+            .await?
+            .try_collect()
+            .await?;
+        Ok(!batches.is_empty() && batches[0].num_rows() > 0)
+    }
+
+    pub async fn insert_qa_with_merged(
+        &self,
+        question: &str,
+        answer: &str,
+        topic: &str,
+        merged: bool,
+        vector: &[f32],
+    ) -> Result<()> {
+        let schema = qa_schema();
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(StringArray::from(vec![question])),
+                Arc::new(StringArray::from(vec![answer])),
+                Arc::new(StringArray::from(vec![topic])),
+                Arc::new(BooleanArray::from(vec![merged])),
+                make_vector_array(vector),
+            ],
+        )?;
+        let batches = RecordBatchIterator::new(vec![Ok(batch)], schema);
+        self.qa_records.add(Box::new(batches)).execute().await?;
+        Ok(())
     }
 }
 

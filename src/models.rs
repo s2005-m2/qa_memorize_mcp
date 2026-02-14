@@ -29,7 +29,7 @@ pub struct MergeKnowledgeParams {
     pub threshold: Option<f32>,
 }
 
-// ── Data Records ──
+// ── Data Records (query results, no vector) ──
 
 #[derive(Debug, Clone, Serialize)]
 pub struct QaRecord {
@@ -46,6 +46,43 @@ pub struct KnowledgeRecord {
     pub topic: String,
     pub source_questions: Vec<String>,
     pub score: f32,
+}
+
+// ── Persistent Records (JSON export/import, with vector) ──
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TopicEntry {
+    pub topic_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vector: Option<Vec<f32>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QaEntry {
+    pub question: String,
+    pub answer: String,
+    pub topic: String,
+    pub merged: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vector: Option<Vec<f32>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnowledgeEntry {
+    pub knowledge_text: String,
+    pub topic: String,
+    pub source_questions: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vector: Option<Vec<f32>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemorizeSnapshot {
+    pub version: u32,
+    pub exported_at: String,
+    pub topics: Vec<TopicEntry>,
+    pub qa_records: Vec<QaEntry>,
+    pub knowledge: Vec<KnowledgeEntry>,
 }
 
 // ── Constants ──

@@ -1,9 +1,11 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Result;
 use rmcp::ServiceExt;
 
 use memorize_mcp::embedding::Embedder;
+use memorize_mcp::persistence;
 use memorize_mcp::server::MemorizeServer;
 use memorize_mcp::storage::Storage;
 use memorize_mcp::transport::ResilientStdioTransport;
@@ -11,7 +13,7 @@ use memorize_mcp::transport::ResilientStdioTransport;
 struct Args {
     transport: String,
     port: u16,
-    db_path: String,
+    db_path: Option<String>,
     model_dir: String,
 }
 
@@ -19,7 +21,7 @@ fn parse_args() -> Result<Args> {
     let args: Vec<String> = std::env::args().collect();
     let mut transport = "stdio".to_string();
     let mut port: u16 = 8080;
-    let mut db_path = "./data".to_string();
+    let mut db_path: Option<String> = None;
     let mut model_dir = "./embedding_model".to_string();
 
     let mut i = 1;
@@ -45,7 +47,7 @@ fn parse_args() -> Result<Args> {
             "--db-path" => {
                 i += 1;
                 if i < args.len() {
-                    db_path = args[i].clone();
+                    db_path = Some(args[i].clone());
                 }
             }
             "--model-dir" => {
@@ -60,7 +62,7 @@ fn parse_args() -> Result<Args> {
                      Options:\n  \
                        --transport <stdio|http>  Transport type (default: stdio)\n  \
                        --port <PORT>             HTTP port (default: 8080)\n  \
-                       --db-path <PATH>          Database path (default: ./data)\n  \
+                       --db-path <PATH>          Database path (default: ~/.memorize-mcp)\n  \
                        --model-dir <PATH>        Embedding model directory (default: ./embedding_model)"
                 );
                 std::process::exit(0);
@@ -94,6 +96,13 @@ async fn main() -> Result<()> {
 
     let args = parse_args()?;
 
+    let data_dir: PathBuf = match &args.db_path {
+        Some(p) => PathBuf::from(p),
+        None => persistence::default_data_dir()?,
+    };
+    std::fs::create_dir_all(&data_dir)?;
+    let db_path_str = data_dir.to_string_lossy().to_string();
+
     tracing::info!("Loading embedding model from {}", args.model_dir);
     let embedder = Arc::new(Embedder::load(
         &format!("{}/model_ort.onnx", args.model_dir),
@@ -101,11 +110,16 @@ async fn main() -> Result<()> {
     )?);
     tracing::info!("Embedding model loaded");
 
-    tracing::info!("Opening storage at {}", args.db_path);
-    let storage = Arc::new(Storage::open(&args.db_path).await?);
+    tracing::info!("Opening storage at {}", db_path_str);
+    let storage = Arc::new(Storage::open(&db_path_str).await?);
     tracing::info!("Storage ready");
 
-    let server = MemorizeServer::new(storage, embedder);
+    tracing::info!("Syncing with JSON snapshot");
+    if let Err(e) = persistence::sync_on_startup(&storage, &embedder, &data_dir).await {
+        tracing::warn!("Startup sync failed (non-fatal): {}", e);
+    }
+
+    let server = MemorizeServer::new(storage.clone(), embedder);
 
     match args.transport.as_str() {
         "stdio" => {
@@ -117,8 +131,6 @@ async fn main() -> Result<()> {
                     tracing::info!("Client disconnected: {:?}", reason);
                 }
                 Err(e) => {
-                    // Client disconnect or malformed message is not a fatal error
-                    // for stdio — the pipe is gone, just log and exit gracefully.
                     tracing::warn!("Stdio transport closed: {}", e);
                 }
             }
@@ -154,6 +166,11 @@ async fn main() -> Result<()> {
                 .await?;
         }
         other => anyhow::bail!("Unknown transport: {}. Use 'stdio' or 'http'", other),
+    }
+
+    tracing::info!("Exporting JSON snapshot before shutdown");
+    if let Err(e) = persistence::export_json(&storage, &data_dir).await {
+        tracing::error!("Failed to export JSON on shutdown: {}", e);
     }
 
     Ok(())
