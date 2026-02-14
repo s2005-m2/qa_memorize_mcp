@@ -1,0 +1,12 @@
+/target
+/data
+/onnxruntime-win-x64-*/
+/onnxruntime-*.zip
+/.sisyphus/
+*.pdb
+/embedding_model/*.json
+/embedding_model/*.onnx
+/embedding_model/*.data
+/embedding_model/*.onnx_data
+/embedding_model/*.txt
+/embedding_model/tokenizer_tmp/
