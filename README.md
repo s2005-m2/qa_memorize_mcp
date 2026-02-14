@@ -131,6 +131,45 @@ HTTP 模式：
 }
 ```
 
+### OpenCode 配置
+
+在项目根目录的 `opencode.json` 或全局 `~/.config/opencode/opencode.json` 中添加：
+
+stdio 模式（本地运行）：
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "memorize": {
+      "type": "local",
+      "command": ["/path/to/memorize_mcp"],
+      "environment": {
+        "ORT_DYLIB_PATH": "/path/to/libonnxruntime.so"
+      },
+      "enabled": true
+    }
+  }
+}
+```
+
+HTTP 模式（远程连接）：
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "memorize": {
+      "type": "remote",
+      "url": "http://localhost:8080/sse",
+      "enabled": true
+    }
+  }
+}
+```
+
+`environment` 可选，仅在需要手动指定 ONNX Runtime 路径时使用。
+
 不指定 `--db-path` 时，数据自动存储在 `~/.memorize-mcp/`。
 
 ## 打包分发
