@@ -13,6 +13,7 @@ use memorize_mcp::transport::ResilientStdioTransport;
 struct Args {
     transport: String,
     port: u16,
+    hook_port: Option<u16>,
     db_path: Option<String>,
     model_dir: String,
     debug: bool,
@@ -21,13 +22,14 @@ struct Args {
 fn parse_args() -> Result<Args> {
     let args: Vec<String> = std::env::args().collect();
     let mut transport = "stdio".to_string();
-    let mut port: u16 = 8080;
+    let mut port: u16 = 19532;
     let mut db_path: Option<String> = None;
     let mut model_dir = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.join("embedding_model")))
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|| "./embedding_model".to_string());
+    let mut hook_port: Option<u16> = None;
     let mut debug = false;
 
     let mut i = 1;
@@ -50,6 +52,17 @@ fn parse_args() -> Result<Args> {
                     })?;
                 }
             }
+            "--hook-port" => {
+                i += 1;
+                if i < args.len() {
+                    hook_port = Some(args[i].parse().map_err(|_| {
+                        anyhow::anyhow!(
+                            "--hook-port value '{}' is not a valid port number",
+                            args[i]
+                        )
+                    })?);
+                }
+            }
             "--db-path" => {
                 i += 1;
                 if i < args.len() {
@@ -70,7 +83,8 @@ fn parse_args() -> Result<Args> {
                     "memorize-mcp\n\n\
                      Options:\n  \
                        --transport <stdio|http>  Transport type (default: stdio)\n  \
-                       --port <PORT>             HTTP port (default: 8080)\n  \
+                       --port <PORT>             HTTP port (default: 19532)\n  \
+                       --hook-port <PORT>        Start hook HTTP server for /api/recall (default: 19533 when enabled)\n  \
                        --db-path <PATH>          Database path (default: ~/.memorize-mcp)\n  \
                        --model-dir <PATH>        Embedding model directory (default: ./embedding_model)\n  \
                        --debug                   Enable debug logging to file (memorize_debug.log next to executable)"
@@ -88,6 +102,7 @@ fn parse_args() -> Result<Args> {
     Ok(Args {
         transport,
         port,
+        hook_port,
         db_path,
         model_dir,
         debug,
@@ -156,7 +171,31 @@ async fn main() -> Result<()> {
         tracing::warn!("Shared import failed (non-fatal): {}", e);
     }
 
-    let server = MemorizeServer::new(storage.clone(), embedder);
+    let server = MemorizeServer::new(storage.clone(), embedder.clone());
+
+    if let Some(hook_port) = args.hook_port {
+        let hook_router = memorize_mcp::hook::recall_router(storage.clone(), embedder.clone());
+        let mut bound_port = None;
+        for offset in 0..10u16 {
+            let try_port = hook_port.saturating_add(offset);
+            match tokio::net::TcpListener::bind(format!("0.0.0.0:{}", try_port)).await {
+                Ok(listener) => {
+                    tracing::info!("Starting hook server on 0.0.0.0:{}", try_port);
+                    tokio::spawn(async move {
+                        axum::serve(listener, hook_router).await.unwrap();
+                    });
+                    bound_port = Some(try_port);
+                    break;
+                }
+                Err(_) => {
+                    tracing::warn!("Hook port {} in use, trying next", try_port);
+                }
+            }
+        }
+        if bound_port.is_none() {
+            tracing::error!("Failed to bind hook server on ports {}-{}", hook_port, hook_port + 9);
+        }
+    }
 
     match args.transport.as_str() {
         "stdio" => {
@@ -179,8 +218,6 @@ async fn main() -> Result<()> {
             };
 
             let ct = tokio_util::sync::CancellationToken::new();
-            let bind_addr = format!("0.0.0.0:{}", args.port);
-            tracing::info!("Starting HTTP transport on {}", bind_addr);
 
             let service = StreamableHttpService::new(
                 move || Ok(server.clone()),
@@ -191,8 +228,28 @@ async fn main() -> Result<()> {
                 },
             );
 
-            let router = axum::Router::new().nest_service("/mcp", service);
-            let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
+            let hook_router = memorize_mcp::hook::recall_router(storage.clone(), embedder.clone());
+            let router = axum::Router::new()
+                .nest_service("/mcp", service)
+                .merge(hook_router);
+
+            let mut listener = None;
+            for offset in 0..10u16 {
+                let try_port = args.port.saturating_add(offset);
+                match tokio::net::TcpListener::bind(format!("0.0.0.0:{}", try_port)).await {
+                    Ok(l) => {
+                        tracing::info!("Starting HTTP transport on 0.0.0.0:{}", try_port);
+                        listener = Some(l);
+                        break;
+                    }
+                    Err(_) => {
+                        tracing::warn!("HTTP port {} in use, trying next", try_port);
+                    }
+                }
+            }
+            let listener = listener.ok_or_else(|| {
+                anyhow::anyhow!("Failed to bind HTTP on ports {}-{}", args.port, args.port + 9)
+            })?;
             axum::serve(listener, router)
                 .with_graceful_shutdown(async move {
                     if let Err(e) = tokio::signal::ctrl_c().await {

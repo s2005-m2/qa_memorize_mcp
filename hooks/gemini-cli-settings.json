@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "BeforeAgent": [
+      {
+        "command": "python <PATH_TO_MEMORIZE>/scripts/memorize_hook.py",
+        "cwd": "<PATH_TO_MEMORIZE>"
+      }
+    ]
+  }
+}

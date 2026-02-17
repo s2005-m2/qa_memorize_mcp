@@ -107,7 +107,7 @@ stdio 模式（用于 Claude Desktop 等 MCP 客户端）：
 HTTP 模式：
 
 ```bash
-./target/release/memorize_mcp --transport http --port 8080
+./target/release/memorize_mcp --transport http --port 19532
 ```
 
 ### 命令行参数
@@ -115,7 +115,7 @@ HTTP 模式：
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
 | `--transport` | `stdio` | 传输模式：`stdio` 或 `http` |
-| `--port` | `8080` | HTTP 模式监听端口 |
+| `--port` | `19532` | HTTP 模式监听端口 |
 | `--db-path` | `~/.memorize-mcp` | LanceDB 数据库路径及 JSON 快照目录 |
 | `--model-dir` | `./embedding_model` | Embedding 模型目录 |
 
@@ -161,7 +161,7 @@ HTTP 模式（远程连接）：
   "mcp": {
     "memorize": {
       "type": "remote",
-      "url": "http://localhost:8080/sse",
+      "url": "http://localhost:19532/sse",
       "enabled": true
     }
   }

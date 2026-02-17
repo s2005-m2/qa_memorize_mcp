@@ -295,6 +295,42 @@ impl Storage {
         Ok(parse_knowledge_batches(&batches)?.into_iter().next())
     }
 
+    pub async fn find_nearest_qa_global_n(
+        &self,
+        vector: &[f32],
+        limit: usize,
+    ) -> Result<Vec<QaRecord>> {
+        let batches: Vec<RecordBatch> = self
+            .qa_records
+            .query()
+            .nearest_to(vector)?
+            .limit(limit)
+            .execute()
+            .await?
+            .try_collect()
+            .await?;
+
+        parse_qa_batches(&batches)
+    }
+
+    pub async fn find_nearest_knowledge_global_n(
+        &self,
+        vector: &[f32],
+        limit: usize,
+    ) -> Result<Vec<KnowledgeRecord>> {
+        let batches: Vec<RecordBatch> = self
+            .knowledge
+            .query()
+            .nearest_to(vector)?
+            .limit(limit)
+            .execute()
+            .await?
+            .try_collect()
+            .await?;
+
+        parse_knowledge_batches(&batches)
+    }
+
     pub async fn mark_merged(&self, questions: &[String]) -> Result<()> {
         for q in questions {
             let escaped = q.replace('\'', "''");
@@ -775,5 +811,39 @@ mod tests {
             "Rust is a systems programming language"
         );
         assert_eq!(results[0].source_questions.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_find_nearest_qa_global_n() {
+        let storage = test_storage().await;
+        for i in 0..3 {
+            let v = fake_vector(10.0 + i as f32);
+            storage
+                .insert_qa(&format!("Q{i}"), &format!("A{i}"), "t", &v)
+                .await
+                .unwrap();
+        }
+        let results = storage
+            .find_nearest_qa_global_n(&fake_vector(10.0), 2)
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_find_nearest_knowledge_global_n() {
+        let storage = test_storage().await;
+        for i in 0..3 {
+            let v = fake_vector(20.0 + i as f32);
+            storage
+                .insert_knowledge(&format!("K{i}"), "t", &[format!("src{i}")], &v)
+                .await
+                .unwrap();
+        }
+        let results = storage
+            .find_nearest_knowledge_global_n(&fake_vector(20.0), 2)
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 2);
     }
 }

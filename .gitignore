@@ -12,3 +12,5 @@
 /embedding_model/tokenizer_tmp/
 /dist
 *.zip
+*.pyc
+/gemini-cli-temp
