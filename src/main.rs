@@ -178,9 +178,9 @@ async fn main() -> Result<()> {
         let mut bound_port = None;
         for offset in 0..10u16 {
             let try_port = hook_port.saturating_add(offset);
-            match tokio::net::TcpListener::bind(format!("0.0.0.0:{}", try_port)).await {
+            match tokio::net::TcpListener::bind(format!("127.0.0.1:{}", try_port)).await {
                 Ok(listener) => {
-                    tracing::info!("Starting hook server on 0.0.0.0:{}", try_port);
+                    tracing::info!("Starting hook server on 127.0.0.1:{}", try_port);
                     tokio::spawn(async move {
                         axum::serve(listener, hook_router).await.unwrap();
                     });
@@ -236,9 +236,9 @@ async fn main() -> Result<()> {
             let mut listener = None;
             for offset in 0..10u16 {
                 let try_port = args.port.saturating_add(offset);
-                match tokio::net::TcpListener::bind(format!("0.0.0.0:{}", try_port)).await {
+                match tokio::net::TcpListener::bind(format!("127.0.0.1:{}", try_port)).await {
                     Ok(l) => {
-                        tracing::info!("Starting HTTP transport on 0.0.0.0:{}", try_port);
+                        tracing::info!("Starting HTTP transport on 127.0.0.1:{}", try_port);
                         listener = Some(l);
                         break;
                     }
