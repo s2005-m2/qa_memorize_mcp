@@ -422,6 +422,7 @@ impl ServerHandler for MemorizeServer {
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
+        tracing::debug!("list_tools called");
         Ok(ListToolsResult {
             tools: vec![
                 Tool {
@@ -468,6 +469,11 @@ impl ServerHandler for MemorizeServer {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::info!(
+            "call_tool: {} args={}",
+            request.name,
+            serde_json::to_string(&request.arguments).unwrap_or_default()
+        );
         match request.name.as_ref() {
             "store_qa" => {
                 let params: StoreQaParams = serde_json::from_value(

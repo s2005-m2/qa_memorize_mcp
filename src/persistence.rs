@@ -8,6 +8,7 @@ use crate::models::*;
 use crate::storage::Storage;
 
 const JSON_FILENAME: &str = "memorize_data.json";
+const SIMILAR_THRESHOLD: f32 = 0.15;
 
 pub fn default_data_dir() -> Result<PathBuf> {
     let home = if cfg!(target_os = "windows") {
@@ -27,12 +28,24 @@ pub fn json_path(data_dir: &Path) -> PathBuf {
 
 pub async fn export_json(storage: &Storage, data_dir: &Path) -> Result<()> {
     let topics = storage.dump_topics().await?;
-    let qa_records = storage.dump_qa().await?;
-    let knowledge = storage.dump_knowledge().await?;
+    let mut qa_records = storage.dump_qa().await?;
+    let mut knowledge = storage.dump_knowledge().await?;
+
+    let now = chrono_now();
+    for r in &mut qa_records {
+        if r.created_at.is_none() {
+            r.created_at = Some(now.clone());
+        }
+    }
+    for r in &mut knowledge {
+        if r.created_at.is_none() {
+            r.created_at = Some(now.clone());
+        }
+    }
 
     let snapshot = MemorizeSnapshot {
         version: 1,
-        exported_at: chrono_now(),
+        exported_at: now,
         topics,
         qa_records,
         knowledge,
@@ -55,6 +68,135 @@ pub async fn export_json(storage: &Storage, data_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+async fn import_one_shared(
+    storage: &Storage,
+    embedder: &Embedder,
+    path: &Path,
+    errors: &mut Vec<String>,
+) -> Result<()> {
+    let json_str = std::fs::read_to_string(path)?;
+    let snapshot: MemorizeSnapshot = serde_json::from_str(&json_str)?;
+    let fname = path.display().to_string();
+
+    tracing::info!(
+        "Importing {} ({} topics, {} QA, {} knowledge)",
+        fname, snapshot.topics.len(), snapshot.qa_records.len(), snapshot.knowledge.len()
+    );
+
+    for entry in &snapshot.topics {
+        let vec = embedder.embed(&entry.topic_name)?;
+        if storage.find_similar_topic(&vec, DEFAULT_TOPIC_THRESHOLD).await?.is_none() {
+            storage.create_topic(&entry.topic_name, &vec).await?;
+        }
+    }
+
+    let fallback_time = &snapshot.exported_at;
+
+    for entry in &snapshot.qa_records {
+        if let Err(e) = merge_qa(storage, embedder, entry, fallback_time).await {
+            errors.push(format!("[{}] QA '{}': {}", fname, entry.question, e));
+        }
+    }
+
+    for entry in &snapshot.knowledge {
+        if let Err(e) = merge_knowledge_entry(storage, embedder, entry, fallback_time).await {
+            let preview = &entry.knowledge_text[..entry.knowledge_text.len().min(50)];
+            errors.push(format!("[{}] Knowledge '{}': {}", fname, preview, e));
+        }
+    }
+
+    Ok(())
+}
+
+// ── Merge Helpers ──
+
+async fn merge_qa(
+    storage: &Storage,
+    embedder: &Embedder,
+    entry: &QaEntry,
+    fallback_time: &str,
+) -> Result<()> {
+    let vec = embedder.embed(&entry.question)?;
+    let existing = storage.find_nearest_qa_global(&vec).await?;
+
+    if let Some(ref record) = existing {
+        if record.score <= SIMILAR_THRESHOLD {
+            let incoming_time = entry.created_at.as_deref().unwrap_or(fallback_time);
+            let all_qa = storage.dump_qa().await?;
+            let existing_time = all_qa.iter()
+                .find(|r| r.question == record.question && r.topic == record.topic)
+                .and_then(|r| r.created_at.as_deref())
+                .unwrap_or("");
+
+            if incoming_time > existing_time {
+                storage.delete_qa(&record.question, &record.topic).await?;
+                let topic = resolve_topic(storage, embedder, &entry.topic).await?;
+                storage.insert_qa_with_merged(
+                    &entry.question, &entry.answer, &topic, entry.merged, &vec,
+                ).await?;
+            }
+            return Ok(());
+        }
+    }
+
+    let topic = resolve_topic(storage, embedder, &entry.topic).await?;
+    storage.insert_qa_with_merged(
+        &entry.question, &entry.answer, &topic, entry.merged, &vec,
+    ).await?;
+    Ok(())
+}
+
+async fn merge_knowledge_entry(
+    storage: &Storage,
+    embedder: &Embedder,
+    entry: &KnowledgeEntry,
+    fallback_time: &str,
+) -> Result<()> {
+    let vec = embedder.embed(&entry.knowledge_text)?;
+    let existing = storage.find_nearest_knowledge_global(&vec).await?;
+
+    if let Some(ref record) = existing {
+        if record.score <= SIMILAR_THRESHOLD {
+            let incoming_time = entry.created_at.as_deref().unwrap_or(fallback_time);
+            let all_knowledge = storage.dump_knowledge().await?;
+            let existing_time = all_knowledge.iter()
+                .find(|r| r.knowledge_text == record.knowledge_text && r.topic == record.topic)
+                .and_then(|r| r.created_at.as_deref())
+                .unwrap_or("");
+
+            if incoming_time > existing_time {
+                storage.delete_knowledge(&record.knowledge_text, &record.topic).await?;
+                let topic = resolve_topic(storage, embedder, &entry.topic).await?;
+                storage.insert_knowledge(
+                    &entry.knowledge_text, &topic, &entry.source_questions, &vec,
+                ).await?;
+            }
+            return Ok(());
+        }
+    }
+
+    let topic = resolve_topic(storage, embedder, &entry.topic).await?;
+    storage.insert_knowledge(
+        &entry.knowledge_text, &topic, &entry.source_questions, &vec,
+    ).await?;
+    Ok(())
+}
+
+async fn resolve_topic(
+    storage: &Storage,
+    embedder: &Embedder,
+    topic_name: &str,
+) -> Result<String> {
+    let vec = embedder.embed(topic_name)?;
+    if let Some(existing) = storage.find_similar_topic(&vec, DEFAULT_TOPIC_THRESHOLD).await? {
+        return Ok(existing);
+    }
+    storage.create_topic(topic_name, &vec).await?;
+    Ok(topic_name.to_string())
+}
+
+// ── Sync on Startup ──
+
 pub async fn sync_on_startup(
     storage: &Storage,
     embedder: &Embedder,
@@ -62,7 +204,6 @@ pub async fn sync_on_startup(
 ) -> Result<()> {
     let path = json_path(data_dir);
     if !path.exists() {
-        tracing::info!("No existing JSON snapshot at {}, skipping sync", path.display());
         return Ok(());
     }
 
@@ -73,14 +214,9 @@ pub async fn sync_on_startup(
 
     tracing::info!(
         "Loaded JSON snapshot (v{}, exported_at: {}) with {} topics, {} QA, {} knowledge",
-        snapshot.version,
-        snapshot.exported_at,
-        snapshot.topics.len(),
-        snapshot.qa_records.len(),
-        snapshot.knowledge.len()
+        snapshot.version, snapshot.exported_at,
+        snapshot.topics.len(), snapshot.qa_records.len(), snapshot.knowledge.len()
     );
-
-    // ── JSON → LanceDB: insert records that exist in JSON but not in LanceDB ──
 
     let mut json_to_db_topics = 0u32;
     let mut json_to_db_qa = 0u32;
@@ -90,10 +226,7 @@ pub async fn sync_on_startup(
         if storage.has_topic(&entry.topic_name).await? {
             continue;
         }
-        let vector = match &entry.vector {
-            Some(v) if v.len() == VECTOR_DIM as usize => v.clone(),
-            _ => embedder.embed(&entry.topic_name)?,
-        };
+        let vector = embedder.embed(&entry.topic_name)?;
         storage.create_topic(&entry.topic_name, &vector).await?;
         json_to_db_topics += 1;
     }
@@ -102,10 +235,7 @@ pub async fn sync_on_startup(
         if storage.has_qa(&entry.question, &entry.topic).await? {
             continue;
         }
-        let vector = match &entry.vector {
-            Some(v) if v.len() == VECTOR_DIM as usize => v.clone(),
-            _ => embedder.embed(&entry.question)?,
-        };
+        let vector = embedder.embed(&entry.question)?;
         storage
             .insert_qa_with_merged(&entry.question, &entry.answer, &entry.topic, entry.merged, &vector)
             .await?;
@@ -113,16 +243,10 @@ pub async fn sync_on_startup(
     }
 
     for entry in &snapshot.knowledge {
-        if storage
-            .has_knowledge(&entry.knowledge_text, &entry.topic)
-            .await?
-        {
+        if storage.has_knowledge(&entry.knowledge_text, &entry.topic).await? {
             continue;
         }
-        let vector = match &entry.vector {
-            Some(v) if v.len() == VECTOR_DIM as usize => v.clone(),
-            _ => embedder.embed(&entry.knowledge_text)?,
-        };
+        let vector = embedder.embed(&entry.knowledge_text)?;
         storage
             .insert_knowledge(&entry.knowledge_text, &entry.topic, &entry.source_questions, &vector)
             .await?;
@@ -132,41 +256,25 @@ pub async fn sync_on_startup(
     if json_to_db_topics + json_to_db_qa + json_to_db_knowledge > 0 {
         tracing::info!(
             "JSON → LanceDB: +{} topics, +{} QA, +{} knowledge",
-            json_to_db_topics,
-            json_to_db_qa,
-            json_to_db_knowledge
+            json_to_db_topics, json_to_db_qa, json_to_db_knowledge
         );
     }
-
-    // ── LanceDB → JSON: find records in DB that are missing from JSON, then re-export ──
 
     let db_topics = storage.dump_topics().await?;
     let db_qa = storage.dump_qa().await?;
     let db_knowledge = storage.dump_knowledge().await?;
 
     let json_topic_names: HashSet<&str> = snapshot.topics.iter().map(|t| t.topic_name.as_str()).collect();
-    let json_qa_keys: HashSet<(&str, &str)> = snapshot
-        .qa_records
-        .iter()
-        .map(|r| (r.question.as_str(), r.topic.as_str()))
-        .collect();
-    let json_knowledge_keys: HashSet<(&str, &str)> = snapshot
-        .knowledge
-        .iter()
-        .map(|r| (r.knowledge_text.as_str(), r.topic.as_str()))
-        .collect();
+    let json_qa_keys: HashSet<(&str, &str)> = snapshot.qa_records.iter()
+        .map(|r| (r.question.as_str(), r.topic.as_str())).collect();
+    let json_knowledge_keys: HashSet<(&str, &str)> = snapshot.knowledge.iter()
+        .map(|r| (r.knowledge_text.as_str(), r.topic.as_str())).collect();
 
-    let db_has_extra_topics = db_topics
-        .iter()
-        .any(|t| !json_topic_names.contains(t.topic_name.as_str()));
-    let db_has_extra_qa = db_qa
-        .iter()
-        .any(|r| !json_qa_keys.contains(&(r.question.as_str(), r.topic.as_str())));
-    let db_has_extra_knowledge = db_knowledge
-        .iter()
-        .any(|r| !json_knowledge_keys.contains(&(r.knowledge_text.as_str(), r.topic.as_str())));
+    let db_has_extra = db_topics.iter().any(|t| !json_topic_names.contains(t.topic_name.as_str()))
+        || db_qa.iter().any(|r| !json_qa_keys.contains(&(r.question.as_str(), r.topic.as_str())))
+        || db_knowledge.iter().any(|r| !json_knowledge_keys.contains(&(r.knowledge_text.as_str(), r.topic.as_str())));
 
-    if db_has_extra_topics || db_has_extra_qa || db_has_extra_knowledge {
+    if db_has_extra {
         tracing::info!("LanceDB has records not in JSON, re-exporting snapshot");
         let updated = MemorizeSnapshot {
             version: 1,
@@ -183,6 +291,8 @@ pub async fn sync_on_startup(
 
     Ok(())
 }
+
+// ── Time Helpers ──
 
 fn chrono_now() -> String {
     use std::time::SystemTime;
@@ -235,4 +345,58 @@ fn chrono_now() -> String {
 
 fn is_leap(y: i64) -> bool {
     (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+}
+
+// ── Import Shared ──
+
+pub async fn import_shared(
+    storage: &Storage,
+    embedder: &Embedder,
+    data_dir: &Path,
+) -> Result<()> {
+    let shared_files: Vec<_> = std::fs::read_dir(data_dir)?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| {
+            p.extension().map_or(false, |ext| ext == "json")
+                && p.file_name()
+                    .and_then(|n| n.to_str())
+                    .map_or(false, |n| n.ends_with("_shared.json"))
+        })
+        .collect();
+
+    if shared_files.is_empty() {
+        return Ok(());
+    }
+
+    tracing::info!("Found {} shared file(s) to import", shared_files.len());
+    let mut errors: Vec<String> = Vec::new();
+
+    for file_path in &shared_files {
+        let fname = file_path.display().to_string();
+        match import_one_shared(storage, embedder, file_path, &mut errors).await {
+            Ok(()) => {
+                if let Err(e) = std::fs::remove_file(file_path) {
+                    errors.push(format!("[{}] Failed to delete after import: {}", fname, e));
+                } else {
+                    tracing::info!("Imported and deleted {}", fname);
+                }
+            }
+            Err(e) => {
+                errors.push(format!("[{}] Import failed: {}", fname, e));
+            }
+        }
+    }
+
+    if !errors.is_empty() {
+        let log_path = data_dir.join("error.log");
+        let log_content = errors.join("\n");
+        if let Err(e) = std::fs::write(&log_path, &log_content) {
+            tracing::error!("Failed to write error.log: {}", e);
+        } else {
+            tracing::warn!("Import errors written to {}", log_path.display());
+        }
+    }
+
+    Ok(())
 }

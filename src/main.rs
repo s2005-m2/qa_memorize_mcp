@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use rmcp::ServiceExt;
@@ -15,6 +15,7 @@ struct Args {
     port: u16,
     db_path: Option<String>,
     model_dir: String,
+    debug: bool,
 }
 
 fn parse_args() -> Result<Args> {
@@ -27,6 +28,7 @@ fn parse_args() -> Result<Args> {
         .and_then(|p| p.parent().map(|d| d.join("embedding_model")))
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|| "./embedding_model".to_string());
+    let mut debug = false;
 
     let mut i = 1;
     while i < args.len() {
@@ -60,6 +62,9 @@ fn parse_args() -> Result<Args> {
                     model_dir = args[i].clone();
                 }
             }
+            "--debug" => {
+                debug = true;
+            }
             "--help" | "-h" => {
                 eprintln!(
                     "memorize-mcp\n\n\
@@ -67,7 +72,8 @@ fn parse_args() -> Result<Args> {
                        --transport <stdio|http>  Transport type (default: stdio)\n  \
                        --port <PORT>             HTTP port (default: 8080)\n  \
                        --db-path <PATH>          Database path (default: ~/.memorize-mcp)\n  \
-                       --model-dir <PATH>        Embedding model directory (default: ./embedding_model)"
+                       --model-dir <PATH>        Embedding model directory (default: ./embedding_model)\n  \
+                       --debug                   Enable debug logging to file (memorize_debug.log next to executable)"
                 );
                 std::process::exit(0);
             }
@@ -84,21 +90,44 @@ fn parse_args() -> Result<Args> {
         port,
         db_path,
         model_dir,
+        debug,
     })
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive(tracing::Level::INFO.into()),
-        )
-        .with_writer(std::io::stderr)
-        .with_ansi(false)
-        .init();
-
     let args = parse_args()?;
+
+    if args.debug {
+        let log_path = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.join("memorize_debug.log")))
+            .unwrap_or_else(|| PathBuf::from("memorize_debug.log"));
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)?;
+        tracing_subscriber::fmt()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::from_default_env()
+                    .add_directive("memorize_mcp=debug".parse().unwrap())
+                    .add_directive("rmcp=debug".parse().unwrap())
+                    .add_directive(tracing::Level::WARN.into()),
+            )
+            .with_writer(Mutex::new(file))
+            .with_ansi(false)
+            .init();
+        tracing::info!("Debug logging to {}", log_path.display());
+    } else {
+        tracing_subscriber::fmt()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::from_default_env()
+                    .add_directive(tracing::Level::INFO.into()),
+            )
+            .with_writer(std::io::stderr)
+            .with_ansi(false)
+            .init();
+    }
 
     let data_dir: PathBuf = match &args.db_path {
         Some(p) => PathBuf::from(p),
@@ -121,6 +150,10 @@ async fn main() -> Result<()> {
     tracing::info!("Syncing with JSON snapshot");
     if let Err(e) = persistence::sync_on_startup(&storage, &embedder, &data_dir).await {
         tracing::warn!("Startup sync failed (non-fatal): {}", e);
+    }
+
+    if let Err(e) = persistence::import_shared(&storage, &embedder, &data_dir).await {
+        tracing::warn!("Shared import failed (non-fatal): {}", e);
     }
 
     let server = MemorizeServer::new(storage.clone(), embedder);

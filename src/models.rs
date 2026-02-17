@@ -76,8 +76,6 @@ pub struct KnowledgeRecord {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TopicEntry {
     pub topic_name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub vector: Option<Vec<f32>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -86,8 +84,8 @@ pub struct QaEntry {
     pub answer: String,
     pub topic: String,
     pub merged: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub vector: Option<Vec<f32>>,
+    #[serde(default)]
+    pub created_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,8 +93,8 @@ pub struct KnowledgeEntry {
     pub knowledge_text: String,
     pub topic: String,
     pub source_questions: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub vector: Option<Vec<f32>>,
+    #[serde(default)]
+    pub created_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -264,6 +264,37 @@ impl Storage {
             .collect())
     }
 
+    pub async fn find_nearest_qa_global(&self, vector: &[f32]) -> Result<Option<QaRecord>> {
+        let batches: Vec<RecordBatch> = self
+            .qa_records
+            .query()
+            .nearest_to(vector)?
+            .limit(1)
+            .execute()
+            .await?
+            .try_collect()
+            .await?;
+
+        Ok(parse_qa_batches(&batches)?.into_iter().next())
+    }
+
+    pub async fn find_nearest_knowledge_global(
+        &self,
+        vector: &[f32],
+    ) -> Result<Option<KnowledgeRecord>> {
+        let batches: Vec<RecordBatch> = self
+            .knowledge
+            .query()
+            .nearest_to(vector)?
+            .limit(1)
+            .execute()
+            .await?
+            .try_collect()
+            .await?;
+
+        Ok(parse_knowledge_batches(&batches)?.into_iter().next())
+    }
+
     pub async fn mark_merged(&self, questions: &[String]) -> Result<()> {
         for q in questions {
             let escaped = q.replace('\'', "''");
@@ -345,24 +376,9 @@ impl Storage {
                 .downcast_ref::<StringArray>()
                 .ok_or_else(|| anyhow!("topic_name is not StringArray"))?;
 
-            let vectors = batch
-                .column_by_name("vector")
-                .ok_or_else(|| anyhow!("missing vector column"))?
-                .as_any()
-                .downcast_ref::<FixedSizeListArray>()
-                .ok_or_else(|| anyhow!("vector is not FixedSizeListArray"))?;
-
             for i in 0..batch.num_rows() {
-                let vec_arr = vectors.value(i);
-                let floats = vec_arr
-                    .as_any()
-                    .downcast_ref::<Float32Array>()
-                    .ok_or_else(|| anyhow!("vector items are not Float32Array"))?;
-                let vector: Vec<f32> = (0..floats.len()).map(|j| floats.value(j)).collect();
-
                 entries.push(TopicEntry {
                     topic_name: names.value(i).to_string(),
-                    vector: Some(vector),
                 });
             }
         }
@@ -408,27 +424,13 @@ impl Storage {
                 .downcast_ref::<BooleanArray>()
                 .ok_or_else(|| anyhow!("merged is not BooleanArray"))?;
 
-            let vectors = batch
-                .column_by_name("vector")
-                .ok_or_else(|| anyhow!("missing vector column"))?
-                .as_any()
-                .downcast_ref::<FixedSizeListArray>()
-                .ok_or_else(|| anyhow!("vector is not FixedSizeListArray"))?;
-
             for i in 0..batch.num_rows() {
-                let vec_arr = vectors.value(i);
-                let floats = vec_arr
-                    .as_any()
-                    .downcast_ref::<Float32Array>()
-                    .ok_or_else(|| anyhow!("vector items are not Float32Array"))?;
-                let vector: Vec<f32> = (0..floats.len()).map(|j| floats.value(j)).collect();
-
                 entries.push(QaEntry {
                     question: questions.value(i).to_string(),
                     answer: answers.value(i).to_string(),
                     topic: topics.value(i).to_string(),
                     merged: merged.value(i),
-                    vector: Some(vector),
+                    created_at: None,
                 });
             }
         }
@@ -467,13 +469,6 @@ impl Storage {
                 .downcast_ref::<ListArray>()
                 .ok_or_else(|| anyhow!("source_questions is not ListArray"))?;
 
-            let vectors = batch
-                .column_by_name("vector")
-                .ok_or_else(|| anyhow!("missing vector column"))?
-                .as_any()
-                .downcast_ref::<FixedSizeListArray>()
-                .ok_or_else(|| anyhow!("vector is not FixedSizeListArray"))?;
-
             for i in 0..batch.num_rows() {
                 let source_arr = source_lists.value(i);
                 let source_strings = source_arr
@@ -484,18 +479,11 @@ impl Storage {
                     .map(|j| source_strings.value(j).to_string())
                     .collect();
 
-                let vec_arr = vectors.value(i);
-                let floats = vec_arr
-                    .as_any()
-                    .downcast_ref::<Float32Array>()
-                    .ok_or_else(|| anyhow!("vector items are not Float32Array"))?;
-                let vector: Vec<f32> = (0..floats.len()).map(|j| floats.value(j)).collect();
-
                 entries.push(KnowledgeEntry {
                     knowledge_text: texts.value(i).to_string(),
                     topic: topics.value(i).to_string(),
                     source_questions,
-                    vector: Some(vector),
+                    created_at: None,
                 });
             }
         }
@@ -570,6 +558,28 @@ impl Storage {
         )?;
         let batches = RecordBatchIterator::new(vec![Ok(batch)], schema);
         self.qa_records.add(Box::new(batches)).execute().await?;
+        Ok(())
+    }
+
+    pub async fn delete_qa(&self, question: &str, topic: &str) -> Result<()> {
+        self.qa_records
+            .delete(&format!(
+                "question = '{}' AND topic = '{}'",
+                question.replace('\'', "''"),
+                topic.replace('\'', "''")
+            ))
+            .await?;
+        Ok(())
+    }
+
+    pub async fn delete_knowledge(&self, text: &str, topic: &str) -> Result<()> {
+        self.knowledge
+            .delete(&format!(
+                "knowledge_text = '{}' AND topic = '{}'",
+                text.replace('\'', "''"),
+                topic.replace('\'', "''")
+            ))
+            .await?;
         Ok(())
     }
 }
