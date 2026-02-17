@@ -22,7 +22,11 @@ fn parse_args() -> Result<Args> {
     let mut transport = "stdio".to_string();
     let mut port: u16 = 8080;
     let mut db_path: Option<String> = None;
-    let mut model_dir = "./embedding_model".to_string();
+    let mut model_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join("embedding_model")))
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "./embedding_model".to_string());
 
     let mut i = 1;
     while i < args.len() {
