@@ -21,10 +21,16 @@ const SERVER_INSTRUCTIONS: &str = concat!(
     "\n",
     // 角色定义：你连接了一个基于 RAG 的长期记忆服务器
     "### Role\n",
-    "You are connected to a RAG-based long-term memory server. ",
+    "You are connected to a RAG-based long-term memory server that stores accumulated experience and verified knowledge. ",
     "Use it to persist verified knowledge as QA pairs, ",
     "retrieve relevant context from past interactions, ",
     "and consolidate overlapping information into refined knowledge entries.\n",
+    "\n",
+    "**CRITICAL — Proactive Retrieval**: When you encounter experience-dependent questions ",
+    "(unfamiliar libraries, framework quirks, best practices, debugging patterns, configuration issues, ",
+    "or any question where past experience would help), ALWAYS call `query_qa` FIRST — before searching ",
+    "the web, reading docs, or reasoning from scratch. Past experience stored here is pre-verified and ",
+    "more reliable than general search results.\n",
     "\n",
     // 工具调用原则
     "### Tool Invocation Principles\n",
@@ -56,17 +62,15 @@ const SERVER_INSTRUCTIONS: &str = concat!(
     "       ▼\n",
     "  query_qa(question=..., context=...)  ← always try retrieval first\n",
     "       │\n",
-    // score < 0.5 弱匹配 → 用自身知识回答
-    "       ├─ Results found (score < 0.5 = weak match) → answer from your own knowledge\n",
-    // score ≥ 0.5 强匹配 → 用检索结果增强回答
-    "       ├─ Results found (score ≥ 0.5) → use retrieved QA to enhance your answer\n",
-    // 无结果 → 正常回答
-    "       └─ No results → answer normally\n",
-    "       │\n",
-    "       ▼\n",
-    // 如果对话中产生了新的已验证知识 → 存储
-    "  If new verified knowledge was produced during the conversation:\n",
-    "  store_qa(question=..., answer=..., topic=...)\n",
+    // score < 0.5 强匹配 → 用检索结果增强回答
+    "       ├─ Results found (score < 0.5) → use retrieved QA to enhance your answer\n",
+    // score ≥ 0.5 弱匹配 → 用自身知识回答
+    "       ├─ Results found (score ≥ 0.5) → weak match, answer from your own knowledge\n",
+    // 无结果 → 必须解决问题，然后存储经验
+    "       └─ No results or no relevant match:\n",
+    "              1. Resolve the question by other means (web search, docs, reasoning)\n",
+    "              2. MUST call store_qa to save the resolved answer — this is NOT optional\n",
+    "              (Memory grows by filling gaps. Every miss is a future hit.)\n",
     "       │\n",
     "       ▼\n",
     // 定期或用户要求时 → 合并相似 QA 对
@@ -119,11 +123,14 @@ Only store facts that have been verified or confirmed — do not store speculati
 // 应在 store_qa 之前调用以避免重复，也用于为用户问题检索上下文。
 const QUERY_QA_DESC: &str = "\
 Search long-term memory for relevant QA pairs using semantic similarity. \
+WHEN TO USE: Proactively call this tool when facing experience-dependent questions — \
+unfamiliar libraries, framework quirks, best practices, debugging patterns, configuration issues, \
+or any situation where past experience would help. Check here BEFORE searching the web or docs. \
 The search is two-phase: first, the `context` field is used to identify the most relevant topic; \
 then, the `question` field is used to find matching QA pairs within that topic. \
 Returns up to 5 results sorted by relevance. Each result includes a `score` field (L2 distance): \
 0.0 = exact match, < 0.5 = strong match, 0.5–1.0 = moderate match, > 1.0 = weak/no match. \
-Use this tool BEFORE store_qa to avoid duplicates, and to retrieve context for answering user questions.";
+Also use BEFORE store_qa to avoid storing duplicates.";
 
 // 将主题内语义相似的 QA 对聚类，通过 MCP sampling 调用 LLM 合并为精炼知识条目。
 // 已合并的 QA 会被标记，不再出现在 query_qa 结果中。
