@@ -148,6 +148,14 @@ jobs:
             node scripts/bump-version.js
           fi
 
+      - name: Export embedding model
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu --quiet
+          pip install transformers onnxruntime --quiet
+          python embedding_model/export_model.py
+          python -c "from transformers import AutoTokenizer; AutoTokenizer.from_pretrained('sentence-transformers/all-MiniLM-L12-v2').save_pretrained('embedding_model/tokenizer_tmp')"
+          cp embedding_model/tokenizer_tmp/tokenizer.json embedding_model/tokenizer.json
+
       - name: Pack npm platform packages
         shell: bash
         run: |
