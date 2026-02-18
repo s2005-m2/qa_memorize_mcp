@@ -3,7 +3,13 @@
   "mcp": {
     "memorize": {
       "type": "local",
-      "command": ["npx", "-y", "qa-memorize-mcp", "--hook-port", "19533"],
+      "command": [
+        "npx",
+        "-y",
+        "qa-memorize-mcp",
+        "--hook-port",
+        "19533"
+      ],
       "enabled": true
     }
   }
