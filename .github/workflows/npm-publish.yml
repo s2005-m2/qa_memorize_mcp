@@ -9,6 +9,10 @@ on:
         description: 'Dry run (no publish)'
         type: boolean
         default: true
+      version:
+        description: 'Version override (empty = auto patch bump)'
+        type: string
+        default: ''
 
 jobs:
   build:
@@ -88,10 +92,19 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           path: artifacts/
+
+      - name: Bump version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            node scripts/bump-version.js "${{ inputs.version }}"
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            node scripts/bump-version.js "${GITHUB_REF#refs/tags/v}"
+          else
+            node scripts/bump-version.js
+          fi
 
       - name: Pack npm platform packages
         shell: bash
