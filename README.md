@@ -239,4 +239,4 @@ cargo test --test integration -- --test-threads=1  # 仅集成测试
 
 ## License
 
-MIT
+LGPL-3.0-or-later

@@ -3,6 +3,7 @@ name: Build & Publish npm
 on:
   push:
     tags: ['v*']
+    branches: ['publish']
   workflow_dispatch:
     inputs:
       dry_run:
