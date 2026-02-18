@@ -202,9 +202,15 @@ python scripts/package.py --output dist
 dist/
 ├── memorize_mcp(.exe)
 ├── onnxruntime.dll / libonnxruntime.dylib / libonnxruntime.so
-└── embedding_model/
-    ├── model_ort.onnx
-    └── tokenizer.json
+├── embedding_model/
+│   ├── model_ort.onnx
+│   └── tokenizer.json
+└── hooks/
+    ├── memorize-hook.mjs       # Claude Code / Gemini CLI hook
+    ├── opencode-plugin.mjs     # OpenCode 插件
+    ├── claude-code-settings.json
+    ├── gemini-cli-settings.json
+    └── opencode-config.json
 ```
 
 ## ONNX Runtime 查找顺序
@@ -233,6 +239,12 @@ memorize_mcp/
 │   └── integration.rs      # 端到端集成测试
 ├── scripts/
 │   └── package.py          # 跨平台打包脚本
+├── hooks/
+│   ├── memorize-hook.mjs       # Claude Code / Gemini CLI hook (Node.js)
+│   ├── opencode-plugin.mjs     # OpenCode 插件
+│   ├── claude-code-settings.json
+│   ├── gemini-cli-settings.json
+│   └── opencode-config.json
 └── embedding_model/
     ├── model_ort.onnx       # ONNX 模型
     └── tokenizer.json       # Tokenizer

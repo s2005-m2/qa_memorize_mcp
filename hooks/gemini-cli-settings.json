@@ -2,7 +2,7 @@
   "hooks": {
     "BeforeAgent": [
       {
-        "command": "python <PATH_TO_MEMORIZE>/scripts/memorize_hook.py",
+        "command": "node <PATH_TO_MEMORIZE>/hooks/memorize-hook.mjs",
         "cwd": "<PATH_TO_MEMORIZE>"
       }
     ]

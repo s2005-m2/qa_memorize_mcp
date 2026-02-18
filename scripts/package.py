@@ -140,6 +140,14 @@ def package(plat, version, build, output_dir):
             else:
                 print(f"WARNING: {src} not found, skipping", file=sys.stderr)
 
+    hooks_src = os.path.join(project_root, "hooks")
+    hooks_dst = os.path.join(output_dir, "hooks")
+    if os.path.isdir(hooks_src):
+        if os.path.exists(hooks_dst):
+            shutil.rmtree(hooks_dst)
+        shutil.copytree(hooks_src, hooks_dst)
+        print("Copying hooks/")
+
     print(f"\nPackaged to {output_dir}/")
     for root, dirs, files in os.walk(output_dir):
         level = root.replace(output_dir, "").count(os.sep)

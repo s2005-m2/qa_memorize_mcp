@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Functional tests for memorize_mcp hook system.
-Tests: /api/recall endpoint, memorize_hook.py (Claude Code + Gemini CLI), opencode-plugin.mjs
-Requires: built memorize_mcp binary, embedding model files, ONNX Runtime
+Tests: /api/recall endpoint, memorize-hook.mjs (Claude Code + Gemini CLI), opencode-plugin.mjs
+Requires: built memorize_mcp binary, embedding model files, ONNX Runtime, Node.js
 """
 import json, os, signal, subprocess, sys, time, urllib.request, urllib.error, urllib.parse
 
@@ -10,7 +10,7 @@ HTTP_PORT = 19532
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BINARY = os.path.join(PROJECT_DIR, "target", "debug", "memorize_mcp.exe" if sys.platform == "win32" else "memorize_mcp")
 MODEL_DIR = os.path.join(PROJECT_DIR, "embedding_model")
-HOOK_SCRIPT = os.path.join(PROJECT_DIR, "scripts", "memorize_hook.py")
+HOOK_SCRIPT = os.path.join(PROJECT_DIR, "hooks", "memorize-hook.mjs")
 PLUGIN_FILE = os.path.join(PROJECT_DIR, "hooks", "opencode-plugin.mjs")
 
 passed = 0
@@ -57,11 +57,10 @@ def recall_status(q="", **kwargs):
 
 
 def run_hook(stdin_data):
-    """Run memorize_hook.py with given stdin, return (exit_code, stdout, stderr)."""
     env = os.environ.copy()
     env["MEMORIZE_HOOK_PORT"] = str(HOOK_PORT)
     proc = subprocess.run(
-        [sys.executable, HOOK_SCRIPT],
+        ["node", HOOK_SCRIPT],
         input=json.dumps(stdin_data),
         capture_output=True, text=True, timeout=10, env=env,
     )
@@ -177,7 +176,7 @@ def test_recall_endpoint():
 
 
 def test_hook_claude_code():
-    print("\n[2] memorize_hook.py — Claude Code (UserPromptSubmit)")
+    print("\n[2] memorize-hook.mjs — Claude Code (UserPromptSubmit)")
 
     # With results
     code, stdout, stderr = run_hook({
@@ -200,7 +199,7 @@ def test_hook_claude_code():
 
 
 def test_hook_gemini_cli():
-    print("\n[3] memorize_hook.py — Gemini CLI (BeforeAgent)")
+    print("\n[3] memorize-hook.mjs — Gemini CLI (BeforeAgent)")
 
     code, stdout, stderr = run_hook({
         "session_id": "test-session",
@@ -228,12 +227,12 @@ def test_hook_gemini_cli():
 
 
 def test_hook_server_down():
-    print("\n[4] memorize_hook.py — Server unreachable")
+    print("\n[4] memorize-hook.mjs — Server unreachable")
 
     env = os.environ.copy()
     env["MEMORIZE_HOOK_PORT"] = "19999"  # Nothing running here
     proc = subprocess.run(
-        [sys.executable, HOOK_SCRIPT],
+        ["node", HOOK_SCRIPT],
         input=json.dumps({
             "session_id": "test",
             "hook_event_name": "UserPromptSubmit",
@@ -246,13 +245,13 @@ def test_hook_server_down():
 
 
 def test_hook_bad_input():
-    print("\n[5] memorize_hook.py — Bad input handling")
+    print("\n[5] memorize-hook.mjs — Bad input handling")
 
     # Invalid JSON
     env = os.environ.copy()
     env["MEMORIZE_HOOK_PORT"] = str(HOOK_PORT)
     proc = subprocess.run(
-        [sys.executable, HOOK_SCRIPT],
+        ["node", HOOK_SCRIPT],
         input="not json at all",
         capture_output=True, text=True, timeout=10, env=env,
     )
