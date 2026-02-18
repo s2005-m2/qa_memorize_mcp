@@ -2,7 +2,7 @@
 
 为什么叫 QA Memorize？因为它做的事情就是：**记住 Agent 解决问题的经验**(Question & Answer)。
 
-每次你和 Agent 编程助手对话，解决了一个问题、踩了一个坑、搞清了一个概念——这些经验默认会随着会话关闭而消失。QA Memorize MCP 把这些 QA 对存下来，积累的QA会转换为Knowledge，下次遇到相似问题时自动召回，并支持直接查询QA，让 Agent 越用越聪明。
+每次你和 Agent 编程助手对话，解决了一个问题、踩了一个坑、搞清了一个概念——这些经验默认会随着会话关闭而消失。QA Memorize MCP 把这些 QA 对存下来，积累的QA会转换为知识条目，下次遇到相似问题时自动召回，并支持直接查询QA，让 Agent 越用越聪明。
 
 ## 功能
 
@@ -109,14 +109,14 @@ npx qa-memorize-mcp
 
 Hook 脚本调用的 HTTP 端点，根据用户提问语义匹配主题并检索已融合的知识条目，供注入 system prompt。需通过 `--hook-port` 启用。
 
-**请求参数（Query String）：**
+**请求参数（查询字符串）：**
 
 | 参数 | 必填 | 默认值 | 说明 |
 |------|------|--------|------|
 | `context` | 是 | — | 用户的原始提问文本，用于匹配主题并在主题内检索知识 |
 | `limit` | 否 | `5` | 返回结果数量上限 |
 
-**返回值：** JSON 数组，每个元素为 Knowledge 条目：
+**返回值：** JSON 数组，每个元素为知识条目：
 
 ```json
 [
@@ -146,7 +146,7 @@ Hook 脚本调用的 HTTP 端点，根据用户提问语义匹配主题并检索
     │  超时 2 秒，失败静默（不阻塞用户交互）
     │
     ▼
-Hook Server 处理 (hook.rs)
+Hook 服务器处理 (hook.rs)
     context 向量化 → 匹配最相似主题 → 在该主题内检索 Knowledge
     │
     ▼
@@ -170,10 +170,10 @@ Hook 脚本格式化结果 → 注入 system prompt
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                        main.rs                           │
-│              CLI args + Transport (stdio / HTTP)          │
+│            命令行参数 + 传输层 (stdio / HTTP)             │
 │                                                           │
 │   ┌─────────────────────┐    ┌──────────────────────┐    │
-│   │   MCP Server        │    │  Hook HTTP Server    │    │
+│   │   MCP 服务器        │    │  Hook HTTP 服务器    │    │
 │   │   (stdio / HTTP)    │    │  (--hook-port 19533) │    │
 │   │                     │    │                      │    │
 │   │  store_qa           │    │  GET /api/recall     │    │
@@ -184,14 +184,14 @@ Hook 脚本格式化结果 → 注入 system prompt
 │            │                            │                │
 │   ┌────────▼────────────────────────────▼───────────┐    │
 │   │          embedding.rs + storage.rs              │    │
-│   │    ONNX Runtime (384-dim) + LanceDB (3 tables)  │    │
+│   │    ONNX Runtime (384维) + LanceDB (3 张表)    │    │
 │   └─────────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────────┘
          ▲                              ▲
          │ MCP (stdio/HTTP)             │ HTTP GET
          │                              │
 ┌────────┴────────┐          ┌──────────┴──────────┐
-│  AI Client      │          │  Hook Script        │
+│  AI 客户端      │          │  Hook 脚本          │
 │  (Claude Code,  │          │  memorize-hook.mjs  │
 │   Gemini CLI,   │          │  (UserPromptSubmit  │
 │   OpenCode)     │          │   / BeforeAgent)    │
@@ -209,12 +209,12 @@ Hook 脚本格式化结果 → 注入 system prompt
 |------|------|
 | 语言 | Rust (edition 2024) |
 | MCP SDK | rmcp v0.15 (stdio + Streamable HTTP) |
-| Hook Server | axum (HTTP) |
+| Hook 服务器 | axum (HTTP) |
 | 向量存储 | LanceDB v0.26 (本地嵌入式) |
-| Embedding 推理 | ONNX Runtime v1.23+ (通过 ort crate, 动态加载) |
-| Tokenizer | tokenizers v0.21 |
+| Embedding 推理 | ONNX Runtime v1.23+ (通过 ort crate，动态加载) |
+| 分词器 | tokenizers v0.21 |
 | 向量维度 | 384 维 |
-| npm 分发 | 平台包模式 (esbuild-style optional dependencies) |
+| npm 分发 | 平台包模式（esbuild 风格的可选依赖） |
 
 ## 特性
 
@@ -235,13 +235,13 @@ memorize_mcp/
 │   ├── embedding.rs        # ONNX 推理引擎
 │   ├── storage.rs          # LanceDB 存储层 (3 tables)
 │   ├── persistence.rs      # JSON 快照导出 + 启动时双向同步
-│   ├── transport.rs        # Resilient stdio transport
+│   ├── transport.rs        # 健壮的 stdio 传输层
 │   ├── models.rs           # 数据模型 + 常量
 │   └── lib.rs              # 模块导出
 ├── hooks/
 │   ├── memorize-hook.mjs       # Hook 脚本 (Claude Code / Gemini CLI)
 │   ├── opencode-plugin.mjs     # OpenCode 插件
-│   ├── hooks.json              # Claude Code Plugin hooks 定义
+│   ├── hooks.json              # Claude Code Plugin 钩子定义
 │   ├── claude-code-settings.json
 │   ├── gemini-cli-settings.json
 │   └── opencode-config.json
@@ -259,9 +259,9 @@ memorize_mcp/
 │   └── publish.py          # 手动 npm 发布
 ├── .github/workflows/
 │   └── npm-publish.yml     # CI: 4 平台构建 + npm 发布
-├── .claude-plugin/         # Claude Code Plugin manifest
-├── commands/recall.md      # /recall slash command
-├── gemini-extension/       # Gemini CLI Extension 配置
+├── .claude-plugin/         # Claude Code Plugin 清单文件
+├── commands/recall.md      # /recall 斜杠命令
+├── gemini-extension/       # Gemini CLI 扩展配置
 ├── .claude-plugin/         # Claude Code Plugin (marketplace.json + plugin.json)
 └── tests/
     ├── integration.rs      # Rust 端到端集成测试
@@ -289,7 +289,7 @@ memorize_mcp/
 ## 从源码构建
 
 ```bash
-# 前置条件：Rust toolchain, ONNX Runtime >= 1.23, embedding_model/
+# 前置条件：Rust 工具链、ONNX Runtime >= 1.23、embedding_model/ 目录
 cargo build --release
 ./target/release/memorize_mcp --hook-port 19533
 ```
