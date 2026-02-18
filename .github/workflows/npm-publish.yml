@@ -31,7 +31,7 @@ jobs:
             binary: memorize_mcp
             ort_lib: libonnxruntime.so
             ort_url: https://github.com/microsoft/onnxruntime/releases/download/v1.23.0/onnxruntime-linux-x64-1.23.0.tgz
-          - os: macos-13
+          - os: macos-15-intel
             platform: osx-x86_64
             target: x86_64-apple-darwin
             binary: memorize_mcp
@@ -81,6 +81,42 @@ jobs:
         with:
           name: dist-${{ matrix.platform }}
           path: dist/
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Package release archives
+        shell: bash
+        run: |
+          mkdir -p release
+          for dir in artifacts/dist-*; do
+            plat=$(basename "$dir" | sed 's/dist-//')
+            # Find the binary (skip .dll/.so/.dylib)
+            bin=$(find "$dir" -type f ! -name '*.dll' ! -name '*.so' ! -name '*.dylib' | head -1)
+            if [ -z "$bin" ]; then continue; fi
+            name="memorize_mcp-${GITHUB_REF#refs/tags/}-${plat}"
+            if [[ "$plat" == "win-x64" ]]; then
+              zip -j "release/${name}.zip" "$bin"
+            else
+              tar czf "release/${name}.tar.gz" -C "$(dirname "$bin")" "$(basename "$bin")"
+            fi
+          done
+          ls -lh release/
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" release/* --generate-notes
 
   publish:
     needs: build
