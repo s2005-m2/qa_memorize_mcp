@@ -1,7 +1,7 @@
 {
   "name": "qa-memorize-mcp",
   "description": "RAG memory with auto-recall — stores QA pairs, retrieves context automatically",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "mcpServers": {
     "qa-memorize-mcp": {
       "command": "npx",

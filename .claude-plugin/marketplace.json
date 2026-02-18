@@ -1,12 +1,12 @@
 {
   "name": "qa-memorize-mcp",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "RAG-based memory MCP server with auto-recall hooks",
   "plugins": [
     {
       "name": "qa-memorize-mcp",
       "description": "RAG memory with auto-recall — stores QA pairs, retrieves context automatically",
-      "version": "0.1.0",
+      "version": "0.1.2",
       "source": "./",
       "category": "productivity"
     }
