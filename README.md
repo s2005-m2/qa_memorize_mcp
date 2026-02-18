@@ -173,6 +173,61 @@ HTTP 模式（远程连接）：
 
 不指定 `--db-path` 时，数据自动存储在 `~/.memorize-mcp/`。
 
+## npm 安装
+
+```bash
+# 直接运行（自动下载）
+npx qa-memorize-mcp
+
+# 全局安装
+npm install -g qa-memorize-mcp
+qa-memorize-mcp
+```
+
+### 客户端配置
+
+#### Claude Code
+
+Plugin 一键安装（推荐）：
+```
+/plugin marketplace add s2005-m2/memorize_mcp
+/plugin install qa-memorize-mcp@qa-memorize-mcp
+```
+
+或手动添加 MCP：
+```bash
+claude mcp add memorize -- npx -y qa-memorize-mcp --hook-port 19533
+```
+
+#### Gemini CLI
+
+在 `.gemini/settings.json` 中添加：
+```json
+{
+  "mcpServers": {
+    "qa-memorize-mcp": {
+      "command": "npx",
+      "args": ["-y", "qa-memorize-mcp", "--hook-port", "19533"]
+    }
+  }
+}
+```
+
+#### OpenCode
+
+在 `opencode.json` 中添加：
+```json
+{
+  "mcp": {
+    "memorize": {
+      "type": "local",
+      "command": ["npx", "-y", "qa-memorize-mcp", "--hook-port", "19533"],
+      "enabled": true
+    }
+  }
+}
+```
+
 ## 打包分发
 
 使用 `scripts/package.py` 将可执行文件、ONNX Runtime 动态库和模型文件打包到一个目录：

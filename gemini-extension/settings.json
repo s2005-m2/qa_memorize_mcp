@@ -2,8 +2,8 @@
   "hooks": {
     "BeforeAgent": [
       {
-        "command": "node <PATH_TO_MEMORIZE>/hooks/memorize-hook.mjs",
-        "cwd": "<PATH_TO_MEMORIZE>"
+        "command": "node \"${EXTENSION_ROOT}/hooks/memorize-hook.mjs\"",
+        "cwd": "${EXTENSION_ROOT}"
       }
     ]
   },

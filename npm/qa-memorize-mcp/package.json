@@ -1,0 +1,23 @@
+{
+  "name": "qa-memorize-mcp",
+  "version": "0.1.1",
+  "description": "RAG-based memory MCP server with local ONNX embeddings",
+  "bin": {
+    "qa-memorize-mcp": "bin/run.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/postinstall.mjs"
+  },
+  "optionalDependencies": {
+    "qa-memorize-mcp-win-x64": "0.1.1",
+    "qa-memorize-mcp-linux-x64": "0.1.1",
+    "qa-memorize-mcp-darwin-x64": "0.1.1",
+    "qa-memorize-mcp-darwin-arm64": "0.1.1"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": ["mcp", "memorize", "rag", "embedding", "onnx"],
+  "license": "MIT",
+  "author": "whereslow"
+}

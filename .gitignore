@@ -15,3 +15,6 @@
 *.pyc
 .env
 /gemini-cli-temp
+# npm platform package binaries (large artifacts, not tracked)
+npm/qa-memorize-mcp-*/bin/
+*.gz

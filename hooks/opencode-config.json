@@ -8,7 +8,7 @@
   "mcp": {
     "memorize": {
       "type": "local",
-      "command": ["<PATH_TO_MEMORIZE>/target/release/memorize_mcp", "--hook-port", "19533"],
+      "command": ["npx", "-y", "qa-memorize-mcp", "--hook-port", "19533"],
       "enabled": true
     }
   }

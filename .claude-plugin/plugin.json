@@ -1,0 +1,13 @@
+{
+  "name": "qa-memorize-mcp",
+  "description": "RAG memory with auto-recall — stores QA pairs, retrieves context automatically",
+  "version": "0.1.0",
+  "mcpServers": {
+    "qa-memorize-mcp": {
+      "command": "npx",
+      "args": ["-y", "qa-memorize-mcp", "--hook-port", "19533"]
+    }
+  },
+  "hooks": "hooks/hooks.json",
+  "commands": "commands/"
+}

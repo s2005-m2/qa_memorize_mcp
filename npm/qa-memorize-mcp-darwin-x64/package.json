@@ -1,0 +1,9 @@
+{
+  "name": "qa-memorize-mcp-darwin-x64",
+  "version": "0.1.1",
+  "license": "MIT",
+  "author": "whereslow",
+  "os": ["darwin"],
+  "cpu": ["x64"],
+  "files": ["bin/"]
+}
