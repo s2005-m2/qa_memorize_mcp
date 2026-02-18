@@ -32,8 +32,8 @@ def test(name, condition, detail=""):
         print(f"  FAIL: {name}" + (f" - {detail}" if detail else ""))
 
 
-def recall(q, **kwargs):
-    params = {"q": q}
+def recall(context, **kwargs):
+    params = {"context": context}
     params.update(kwargs)
     qs = urllib.parse.urlencode(params)
     url = f"http://localhost:{HOOK_PORT}/api/recall?{qs}"
@@ -42,10 +42,8 @@ def recall(q, **kwargs):
         return resp.status, json.loads(resp.read().decode())
 
 
-def recall_status(q="", **kwargs):
-    params = {"q": q} if q else {}
-    params.update(kwargs)
-    qs = urllib.parse.urlencode(params)
+def recall_status(**kwargs):
+    qs = urllib.parse.urlencode(kwargs)
     url = f"http://localhost:{HOOK_PORT}/api/recall?{qs}"
     try:
         req = urllib.request.Request(url)
@@ -87,7 +85,13 @@ def seed_data(db_dir):
                 "merged": False,
             },
         ],
-        "knowledge": [],
+        "knowledge": [
+            {
+                "knowledge_text": "Rust uses an ownership system with borrowing and lifetimes to manage memory at compile time without a garbage collector, preventing data races and ensuring memory safety.",
+                "topic": "Rust Programming",
+                "source_questions": ["What is Rust ownership?", "How does Rust handle concurrency?"],
+            },
+        ],
     }
     path = os.path.join(db_dir, "memorize_data.json")
     with open(path, "w") as f:
@@ -122,7 +126,7 @@ def start_server():
     for _ in range(30):
         time.sleep(1)
         try:
-            urllib.request.urlopen(f"http://localhost:{HOOK_PORT}/api/recall?q=ping", timeout=2)
+            urllib.request.urlopen(f"http://localhost:{HOOK_PORT}/api/recall?context=ping", timeout=2)
             return True
         except Exception:
             pass
@@ -149,26 +153,22 @@ def test_recall_endpoint():
     print("\n[1] /api/recall endpoint")
 
     status = recall_status()
-    test("Missing q param returns 400", status == 400, f"got {status}")
+    test("Missing context param returns 400", status == 400, f"got {status}")
 
-    status, data = recall("Rust ownership memory management")
-    test("Recall finds seeded QA", status == 200 and len(data) > 0, f"got {len(data)} results")
+    status, data = recall("Rust Programming")
+    test("Recall finds seeded knowledge", status == 200 and len(data) > 0, f"got {len(data)} results")
 
     if data:
         first = data[0]
-        test("Result has type=qa", first.get("type") == "qa", f"got {first.get('type')}")
-        test("Result has question field", "question" in first)
-        test("Result has answer field", "answer" in first)
+        test("Result has type=knowledge", first.get("type") == "knowledge", f"got {first.get('type')}")
+        test("Result has text field", "text" in first)
         test("Result has score field", "score" in first)
 
-    status, data = recall("ownership", context="Rust Programming")
-    test("Recall with context finds QA", status == 200 and len(data) > 0, f"got {len(data)} results")
-
-    status, data = recall("Rust", limit=1)
+    status, data = recall("Rust Programming", limit=1)
     test("Recall respects limit=1", status == 200 and len(data) <= 1, f"got {len(data)} results")
 
     try:
-        url = f"http://localhost:{HTTP_PORT}/api/recall?q=Rust"
+        url = f"http://localhost:{HTTP_PORT}/api/recall?context=Rust"
         with urllib.request.urlopen(url, timeout=5) as resp:
             test("Recall works on HTTP port too", resp.status == 200)
     except Exception as e:

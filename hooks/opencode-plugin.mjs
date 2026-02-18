@@ -13,7 +13,7 @@ export default function(input) {
           : params.message?.content || "";
         if (!msg) return output;
 
-        const url = `http://localhost:${port}/api/recall?q=${encodeURIComponent(msg)}&limit=${limit}`;
+        const url = `http://localhost:${port}/api/recall?context=${encodeURIComponent(msg)}&limit=${limit}`;
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 2000);
 

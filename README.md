@@ -148,6 +148,57 @@ Hook 脚本 (`memorize-hook.mjs`) 在用户每次提问时调用 `/api/recall` �
 
 资源模板。按主题和查询语义检索已融合的知识条目。
 
+## 自动召回 API
+
+### GET /api/recall
+
+Hook 脚本调用的 HTTP 端点，根据用户提问语义匹配主题并检索已融合的知识条目，供注入 system prompt。需通过 `--hook-port` 启用。
+
+**请求参数（Query String）：**
+
+| 参数 | 必填 | 默认值 | 说明 |
+|------|------|--------|------|
+| `context` | 是 | — | 用户的原始提问文本，用于匹配主题并在主题内检索知识 |
+| `limit` | 否 | `5` | 返回结果数量上限 |
+
+**返回值：** JSON 数组，每个元素为 Knowledge 条目：
+
+```json
+[
+  {
+    "type": "knowledge",
+    "text": "Rust 的所有权系统通过编译期检查...",
+    "topic": "Rust 编程",
+    "score": 0.31
+  }
+]
+```
+
+`score` 为 L2 距离（越小越相似）。无匹配时返回空数组 `[]`。
+
+**召回流程：**
+
+```
+用户输入提问
+    │
+    ▼
+客户端 Hook 触发
+    ├─ Claude Code: UserPromptSubmit 事件 → memorize-hook.mjs
+    ├─ Gemini CLI:  BeforeAgent 事件    → memorize-hook.mjs
+    └─ OpenCode:    chat.params hook    → opencode-plugin.mjs
+    │
+    │  GET http://localhost:19533/api/recall?context=<用户提问>&limit=5
+    │  超时 2 秒，失败静默（不阻塞用户交互）
+    │
+    ▼
+Hook Server 处理 (hook.rs)
+    context 向量化 → 匹配最相似主题 → 在该主题内检索 Knowledge
+    │
+    ▼
+Hook 脚本格式化结果 → 注入 system prompt
+    "[Memory Recall]\nKnowledge: ..."
+```
+
 ## 命令行参数
 
 | 参数 | 默认值 | 说明 |
