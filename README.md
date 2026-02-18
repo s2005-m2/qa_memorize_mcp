@@ -118,54 +118,10 @@ curl -o .opencode/plugins/opencode-plugin.mjs https://raw.githubusercontent.com/
 mkdir -p ~/.config/opencode/plugins
 curl -o ~/.config/opencode/plugins/opencode-plugin.mjs https://raw.githubusercontent.com/s2005-m2/qa_memorize_mcp/main/hooks/opencode-plugin.mjs
 ```
-
-<details>
-<summary>面向 Agent 的集成指引（OpenCode 内的 AI 助手请展开阅读）</summary>
-
-你是运行在 OpenCode 中的 AI 助手。请按以下步骤为用户配置 memorize-mcp：
-
-**步骤 1：添加 MCP 服务器**
-
-在项目根目录的 `opencode.json` 中添加（如文件已存在，合并 `mcp` 字段而非覆盖）：
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "mcp": {
-    "memorize": {
-      "type": "local",
-      "command": ["npx", "-y", "qa-memorize-mcp", "--hook-port", "19533"],
-      "enabled": true
-    }
-  }
-}
+** 面向 Agent 配置. **
+```agent
+使用 `fetch` 或 `curl` 获取 https://raw.githubusercontent.com/s2005-m2/qa_memorize_mcp/main/docs/opencode-agent-setup.md 的内容，阅读后按其中的步骤为用户完成配置。
 ```
-
-关键格式要求（与 Claude Code 不同）：
-- 顶层键名是 `mcp`，不是 `mcpServers`
-- `command` 是字符串数组 `["npx", "-y", "qa-memorize-mcp", ...]`，不是单独的 `command` + `args`
-- 必须指定 `"type": "local"`
-
-**步骤 2：配置自动召回 Plugin（可选）**
-
-将插件脚本下载到 OpenCode 的插件目录（自动加载，无需额外配置）：
-
-项目级（仅当前项目）：
-```bash
-mkdir -p .opencode/plugins
-curl -o .opencode/plugins/opencode-plugin.mjs https://raw.githubusercontent.com/s2005-m2/qa_memorize_mcp/main/hooks/opencode-plugin.mjs
-```
-
-或用户级（所有项目）：
-```bash
-mkdir -p ~/.config/opencode/plugins
-curl -o ~/.config/opencode/plugins/opencode-plugin.mjs https://raw.githubusercontent.com/s2005-m2/qa_memorize_mcp/main/hooks/opencode-plugin.mjs
-```
-
-注意：OpenCode 的 `plugin` 配置字段仅支持 npm 包名，本地插件必须放入插件目录自动加载。
-
-**步骤 3：验证**
-
-重启 OpenCode，发送任意消息，检查 system prompt 中是否出现 `[Memory Recall]` 内容。
 
 </details>
 
