@@ -151,7 +151,7 @@ jobs:
       - name: Export embedding model
         run: |
           pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cpu --quiet
-          pip install transformers==4.57.6 onnxruntime==1.24.1 --quiet
+          pip install transformers==4.57.6 onnxruntime==1.24.1 onnx --quiet
           python embedding_model/export_model.py
           python -c "from transformers import AutoTokenizer; AutoTokenizer.from_pretrained('sentence-transformers/all-MiniLM-L12-v2').save_pretrained('embedding_model/tokenizer_tmp')"
           cp embedding_model/tokenizer_tmp/tokenizer.json embedding_model/tokenizer.json
