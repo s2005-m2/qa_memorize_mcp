@@ -3,6 +3,6 @@
   "description": "RAG memory with auto-recall — stores QA pairs, retrieves context automatically",
   "version": "0.1.2",
   "mcpServers": "./.mcp.json",
-  "hooks": "hooks/hooks.json",
-  "commands": "commands/"
+  "hooks": "./hooks/hooks.json",
+  "commands": "./commands/recall.md"
 }
