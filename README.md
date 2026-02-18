@@ -71,33 +71,65 @@ npx qa-memorize-mcp
 
 一行命令启动。自动下载平台原生二进制 + ONNX Runtime + Embedding 模型，无需 Rust 工具链。
 
-### 客户端配置
+### 客户端集成
 
 #### Claude Code
 
+**Plugin 一键安装（推荐）：**
+
 ```bash
-claude mcp add memorize -- npx -y qa-memorize-mcp --hook-port 19533
+/plugin marketplace add s2005-m2/qa_memorize_mcp
+/plugin install qa-memorize-mcp@s2005-m2
 ```
 
 #### Gemini CLI
 
-在 `.gemini/settings.json` 中添加：
+**Extension 一键安装（推荐）：**
+
+```bash
+gemini extensions install https://github.com/s2005-m2/qa_memorize_mcp
+```
+
+
+#### OpenCode
+
+**手动配置：**
+
+编辑 `opencode.json`（项目根目录）或 `~/.config/opencode/opencode.json`（用户级）：
+
 ```json
 {
-  "mcpServers": {
-    "qa-memorize-mcp": {
-      "command": "npx",
-      "args": ["-y", "qa-memorize-mcp", "--hook-port", "19533"]
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "memorize": {
+      "type": "local",
+      "command": ["npx", "-y", "qa-memorize-mcp", "--hook-port", "19533"],
+      "enabled": true
     }
   }
 }
 ```
+```bash
+# 项目级（仅当前项目）
+mkdir -p .opencode/plugins
+curl -o .opencode/plugins/opencode-plugin.mjs https://raw.githubusercontent.com/s2005-m2/qa_memorize_mcp/main/hooks/opencode-plugin.mjs
 
-#### OpenCode
+# 或用户级（所有项目）
+mkdir -p ~/.config/opencode/plugins
+curl -o ~/.config/opencode/plugins/opencode-plugin.mjs https://raw.githubusercontent.com/s2005-m2/qa_memorize_mcp/main/hooks/opencode-plugin.mjs
+```
 
-在 `opencode.json` 中添加：
+<details>
+<summary>面向 Agent 的集成指引（OpenCode 内的 AI 助手请展开阅读）</summary>
+
+你是运行在 OpenCode 中的 AI 助手。请按以下步骤为用户配置 memorize-mcp：
+
+**步骤 1：添加 MCP 服务器**
+
+在项目根目录的 `opencode.json` 中添加（如文件已存在，合并 `mcp` 字段而非覆盖）：
 ```json
 {
+  "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "memorize": {
       "type": "local",
@@ -108,15 +140,34 @@ claude mcp add memorize -- npx -y qa-memorize-mcp --hook-port 19533
 }
 ```
 
-### Hook 配置（自动召回）
+关键格式要求（与 Claude Code 不同）：
+- 顶层键名是 `mcp`，不是 `mcpServers`
+- `command` 是字符串数组 `["npx", "-y", "qa-memorize-mcp", ...]`，不是单独的 `command` + `args`
+- 必须指定 `"type": "local"`
 
-MCP 服务启动后，配置客户端 Hook 即可实现每次对话自动召回相关记忆：
+**步骤 2：配置自动召回 Plugin（可选）**
 
-- **Claude Code** — 将 `hooks/claude-code-settings.json` 合并到 `.claude/settings.json`，或使用 Plugin 一键安装
-- **Gemini CLI** — 将 `hooks/gemini-cli-settings.json` 合并到 `.gemini/settings.json`
-- **OpenCode** — 将 `hooks/opencode-config.json` 合并到 `opencode.json`
+将插件脚本下载到 OpenCode 的插件目录（自动加载，无需额外配置）：
 
-Hook 脚本 (`memorize-hook.mjs`) 在用户每次提问时调用 `/api/recall` 端点，将语义匹配的 QA 和知识条目注入到 system prompt。
+项目级（仅当前项目）：
+```bash
+mkdir -p .opencode/plugins
+curl -o .opencode/plugins/opencode-plugin.mjs https://raw.githubusercontent.com/s2005-m2/qa_memorize_mcp/main/hooks/opencode-plugin.mjs
+```
+
+或用户级（所有项目）：
+```bash
+mkdir -p ~/.config/opencode/plugins
+curl -o ~/.config/opencode/plugins/opencode-plugin.mjs https://raw.githubusercontent.com/s2005-m2/qa_memorize_mcp/main/hooks/opencode-plugin.mjs
+```
+
+注意：OpenCode 的 `plugin` 配置字段仅支持 npm 包名，本地插件必须放入插件目录自动加载。
+
+**步骤 3：验证**
+
+重启 OpenCode，发送任意消息，检查 system prompt 中是否出现 `[Memory Recall]` 内容。
+
+</details>
 
 ## MCP 工具
 
@@ -248,7 +299,7 @@ memorize_mcp/
 ├── .claude-plugin/         # Claude Code Plugin manifest
 ├── commands/recall.md      # /recall slash command
 ├── gemini-extension/       # Gemini CLI Extension 配置
-├── marketplace.json        # Claude Code Plugin Marketplace
+├── .claude-plugin/         # Claude Code Plugin (marketplace.json + plugin.json)
 └── tests/
     ├── integration.rs      # Rust 端到端集成测试
     ├── test_npm_package.py # npm 包端到端测试
