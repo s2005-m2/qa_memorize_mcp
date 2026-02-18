@@ -56,7 +56,7 @@ def test_npm_install(tmp_dir):
         json.dump(pkg, f)
 
     code, stdout, stderr = npm_run(
-        ["install", "qa-memorize-mcp@0.1.0", "--no-audit", "--no-fund"],
+        ["install", "qa-memorize-mcp@0.1.1", "--no-audit", "--no-fund"],
         cwd=tmp_dir, timeout=300,
     )
     test("npm install exits 0", code == 0, f"exit={code}\n{stderr[-500:]}")
@@ -86,12 +86,6 @@ def test_npm_install(tmp_dir):
         test(f"Platform package {plat_pkg_name} installed", os.path.isdir(plat_dir))
     else:
         log(f"No platform package for {key}, skipping platform checks")
-
-    # Patch run.js with local fixed version (ORT_DYLIB_PATH bug fix)
-    local_run_js = os.path.join(PROJECT_DIR, "npm", "qa-memorize-mcp", "bin", "run.js")
-    installed_run_js = os.path.join(main_pkg, "bin", "run.js")
-    if os.path.isfile(local_run_js) and os.path.isfile(installed_run_js):
-        shutil.copy2(local_run_js, installed_run_js)
 
     return main_pkg, plat_pkg_name
 
