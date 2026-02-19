@@ -1,5 +1,18 @@
 {
   "name": "qa-memorize-mcp",
   "description": "RAG memory with auto-recall — stores QA pairs, retrieves context automatically",
-  "version": "0.1.2"
+  "version": "0.1.2",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/memorize-hook.mjs\""
+          }
+        ]
+      }
+    ]
+  }
 }
