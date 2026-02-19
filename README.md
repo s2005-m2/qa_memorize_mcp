@@ -1,6 +1,6 @@
 # QA Memorize MCP
 
-[中文文档 (Chinese)](docs/README.zh-CN.md)
+[中文文档](docs/README.zh-CN.md)
 
 Why "QA Memorize"? Because that's exactly what it does: **remember the problem-solving experience of your Agent** (Question & Answer).
 
