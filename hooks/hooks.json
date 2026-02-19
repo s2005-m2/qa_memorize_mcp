@@ -10,6 +10,16 @@
           }
         ]
       }
+    ],
+    "BeforeAgent": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${extensionPath}/hooks/memorize-hook.mjs"
+          }
+        ]
+      }
     ]
   }
 }

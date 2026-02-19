@@ -1,0 +1,10 @@
+{
+  "name": "qa-memorize-mcp",
+  "version": "0.1.0",
+  "mcpServers": {
+    "qa-memorize-mcp": {
+      "command": "npx",
+      "args": ["-y", "qa-memorize-mcp", "--hook-port", "19533"]
+    }
+  }
+}
