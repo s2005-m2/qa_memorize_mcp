@@ -12,8 +12,5 @@
       ],
       "enabled": true
     }
-  },
-  "plugin": [
-    "file://./.opencode/plugins/opencode-plugin.mjs"
-  ]
+  }
 }

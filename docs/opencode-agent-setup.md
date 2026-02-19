@@ -53,21 +53,23 @@ curl -o ~/.config/opencode/plugins/opencode-plugin.mjs https://raw.githubusercon
 
 ### 2b. Register the plugin in opencode.json
 
-Add the `plugin` field to the same config file from Step 1.
+Add the `plugin` field to the same config file from Step 1. The path MUST be an absolute `file:///` URL (three slashes). Resolve the actual absolute path on the user's system.
 
-For project-level:
+For project-level (resolve the project root to an absolute path):
 ```json
 "plugin": [
-  "file://./.opencode/plugins/opencode-plugin.mjs"
+  "file:///absolute/path/to/project/.opencode/plugins/opencode-plugin.mjs"
 ]
 ```
 
-For user-level (use the actual absolute path on the user's system):
+For user-level:
 ```json
 "plugin": [
   "file:///home/<username>/.config/opencode/plugins/opencode-plugin.mjs"
 ]
 ```
+
+On Windows, use `file:///C:/Users/<username>/...` format.
 
 If the config file already has a `plugin` array, append to it instead of replacing.
 

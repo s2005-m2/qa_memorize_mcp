@@ -37,46 +37,7 @@ gemini extensions install https://github.com/s2005-m2/qa_memorize_mcp
 
 #### OpenCode
 
-**Manual configuration:**
-
-Edit `opencode.json` (project root) or `~/.config/opencode/opencode.json` (user-level):
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "mcp": {
-    "memorize": {
-      "type": "local",
-      "command": ["npx", "-y", "qa-memorize-mcp", "--hook-port", "19533"],
-      "enabled": true
-    }
-  }
-}
-```
-```bash
-# Download plugin file
-mkdir -p .opencode/plugins
-curl -o .opencode/plugins/opencode-plugin.mjs https://raw.githubusercontent.com/s2005-m2/qa_memorize_mcp/main/hooks/opencode-plugin.mjs
-```
-
-Then add the `plugin` field to the same `opencode.json`:
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "mcp": {
-    "memorize": {
-      "type": "local",
-      "command": ["npx", "-y", "qa-memorize-mcp", "--hook-port", "19533"],
-      "enabled": true
-    }
-  },
-  "plugin": [
-    "file://./.opencode/plugins/opencode-plugin.mjs"
-  ]
-}
-```
-**Agent-oriented setup:**
+**Agent-oriented setup (recommended):**
 ```agent
 Use `fetch` or `curl` to retrieve the contents of https://raw.githubusercontent.com/s2005-m2/qa_memorize_mcp/main/docs/opencode-agent-setup.md, read it, and follow the steps to complete the setup for the user.
 ```

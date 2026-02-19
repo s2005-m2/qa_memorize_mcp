@@ -35,46 +35,7 @@ gemini extensions install https://github.com/s2005-m2/qa_memorize_mcp
 
 #### OpenCode
 
-**手动配置：**
-
-编辑 `opencode.json`（项目根目录）或 `~/.config/opencode/opencode.json`（用户级）：
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "mcp": {
-    "memorize": {
-      "type": "local",
-      "command": ["npx", "-y", "qa-memorize-mcp", "--hook-port", "19533"],
-      "enabled": true
-    }
-  }
-}
-```
-```bash
-# 下载插件文件
-mkdir -p .opencode/plugins
-curl -o .opencode/plugins/opencode-plugin.mjs https://raw.githubusercontent.com/s2005-m2/qa_memorize_mcp/main/hooks/opencode-plugin.mjs
-```
-
-然后在同一个 `opencode.json` 中添加 `plugin` 字段：
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "mcp": {
-    "memorize": {
-      "type": "local",
-      "command": ["npx", "-y", "qa-memorize-mcp", "--hook-port", "19533"],
-      "enabled": true
-    }
-  },
-  "plugin": [
-    "file://./.opencode/plugins/opencode-plugin.mjs"
-  ]
-}
-```
-** 面向 Agent 配置. **
+**面向 Agent 配置（推荐）：**
 ```agent
 使用 `fetch` 或 `curl` 获取 https://raw.githubusercontent.com/s2005-m2/qa_memorize_mcp/main/docs/opencode-agent-setup.md 的内容，阅读后按其中的步骤为用户完成配置。
 ```
