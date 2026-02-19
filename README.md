@@ -54,13 +54,27 @@ Edit `opencode.json` (project root) or `~/.config/opencode/opencode.json` (user-
 }
 ```
 ```bash
-# Project-level (current project only)
+# Download plugin file
 mkdir -p .opencode/plugins
 curl -o .opencode/plugins/opencode-plugin.mjs https://raw.githubusercontent.com/s2005-m2/qa_memorize_mcp/main/hooks/opencode-plugin.mjs
+```
 
-# Or user-level (all projects)
-mkdir -p ~/.config/opencode/plugins
-curl -o ~/.config/opencode/plugins/opencode-plugin.mjs https://raw.githubusercontent.com/s2005-m2/qa_memorize_mcp/main/hooks/opencode-plugin.mjs
+Then add the `plugin` field to the same `opencode.json`:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "memorize": {
+      "type": "local",
+      "command": ["npx", "-y", "qa-memorize-mcp", "--hook-port", "19533"],
+      "enabled": true
+    }
+  },
+  "plugin": [
+    "file://./.opencode/plugins/opencode-plugin.mjs"
+  ]
+}
 ```
 **Agent-oriented setup:**
 ```agent
@@ -142,7 +156,7 @@ User submits question
 Client Hook triggers
     ├─ Claude Code: UserPromptSubmit event → memorize-hook.mjs
     ├─ Gemini CLI:  BeforeAgent event     → memorize-hook.mjs
-    └─ OpenCode:    chat.params hook      → opencode-plugin.mjs
+    └─ OpenCode:    system.transform hook → opencode-plugin.mjs
     │
     │  GET http://localhost:19533/api/recall?context=<question>&limit=5
     │  2s timeout, silent failure (never blocks user interaction)

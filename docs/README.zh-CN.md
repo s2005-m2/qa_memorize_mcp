@@ -52,13 +52,27 @@ gemini extensions install https://github.com/s2005-m2/qa_memorize_mcp
 }
 ```
 ```bash
-# 项目级（仅当前项目）
+# 下载插件文件
 mkdir -p .opencode/plugins
 curl -o .opencode/plugins/opencode-plugin.mjs https://raw.githubusercontent.com/s2005-m2/qa_memorize_mcp/main/hooks/opencode-plugin.mjs
+```
 
-# 或用户级（所有项目）
-mkdir -p ~/.config/opencode/plugins
-curl -o ~/.config/opencode/plugins/opencode-plugin.mjs https://raw.githubusercontent.com/s2005-m2/qa_memorize_mcp/main/hooks/opencode-plugin.mjs
+然后在同一个 `opencode.json` 中添加 `plugin` 字段：
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "memorize": {
+      "type": "local",
+      "command": ["npx", "-y", "qa-memorize-mcp", "--hook-port", "19533"],
+      "enabled": true
+    }
+  },
+  "plugin": [
+    "file://./.opencode/plugins/opencode-plugin.mjs"
+  ]
+}
 ```
 ** 面向 Agent 配置. **
 ```agent
@@ -140,7 +154,7 @@ Hook 脚本调用的 HTTP 端点，根据用户提问语义匹配主题并检索
 客户端 Hook 触发
     ├─ Claude Code: UserPromptSubmit 事件 → memorize-hook.mjs
     ├─ Gemini CLI:  BeforeAgent 事件    → memorize-hook.mjs
-    └─ OpenCode:    chat.params hook    → opencode-plugin.mjs
+    └─ OpenCode:    system.transform hook → opencode-plugin.mjs
     │
     │  GET http://localhost:19533/api/recall?context=<用户提问>&limit=5
     │  超时 2 秒，失败静默（不阻塞用户交互）
