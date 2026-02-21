@@ -21,22 +21,22 @@ const SERVER_INSTRUCTIONS: &str = concat!(
     "\n",
     // 角色定义：你连接了一个基于 RAG 的长期记忆服务器
     "### Role\n",
-    "You are connected to a RAG-based long-term memory server that stores accumulated experience and verified knowledge. ",
-    "Use it to persist verified knowledge as QA pairs, ",
-    "retrieve relevant context from past interactions, ",
-    "and consolidate overlapping information into refined knowledge entries.\n",
+    "You are connected to a long-term memory server. It stores resolved uncertainties as QA pairs — ",
+    "things that were once unclear and are now understood.\n",
     "\n",
-    "**CRITICAL — Proactive Retrieval**: When you encounter experience-dependent questions ",
-    "(unfamiliar libraries, framework quirks, best practices, debugging patterns, configuration issues, ",
-    "or any question where past experience would help), ALWAYS call `query_qa` FIRST — before searching ",
-    "the web, reading docs, or reasoning from scratch. Past experience stored here is pre-verified and ",
-    "more reliable than general search results.\n",
+    "**CRITICAL — Uncertainty-Driven Memory**:\n",
+    "- **Query when uncertain**: When you feel unsure, hesitant, or about to guess — call `query_qa` ",
+    "BEFORE searching the web or reasoning from scratch. A past session may have already resolved this.\n",
+    "- **Store when clarity emerges**: Whenever something becomes clear during the conversation — ",
+    "whether through debugging, web search, user correction, or your own reasoning — call `store_qa`. ",
+    "You do NOT need to have queried first. The trigger is the clarity itself, not the workflow.\n",
     "\n",
     // 工具调用原则
     "### Tool Invocation Principles\n",
-    // 1. 先查后存：store 之前必须先 query 检查是否已有相似知识
-    "1. **Query before Store**: Always call `query_qa` first to check if similar knowledge already exists. ",
-    "Only call `store_qa` when no sufficiently relevant result is found (score > 0.80 means a match exists).\n",
+    // 1. 存之前尽量先查，避免重复
+    "1. **Check before Store**: When practical, call `query_qa` before `store_qa` to avoid duplicates ",
+    "(score < 0.50 means a match already exists). But do NOT let this stop you from storing — ",
+    "if clarity just emerged and the moment is fresh, store it. Deduplication is cheap; lost knowledge is not.\n",
     // 2. 原子化 QA：每次只存一问一答，不要把多个事实塞进同一条
     "2. **Atomic QA pairs**: Each `store_qa` call should contain exactly ONE question and ONE answer. ",
     "Do not bundle multiple facts into a single QA pair — split them.\n",
@@ -56,26 +56,22 @@ const SERVER_INSTRUCTIONS: &str = concat!(
     // 工作流
     "### Workflow\n",
     "```\n",
-    // 用户提问 → 总是先检索
-    "User asks a question\n",
+    // 路径 A：遇到不确定的事 → 先查记忆
+    "Path A — You feel uncertain about something:\n",
+    "  query_qa(question=..., context=...)  ← check if this was resolved before\n",
     "       │\n",
-    "       ▼\n",
-    "  query_qa(question=..., context=...)  ← always try retrieval first\n",
-    "       │\n",
-    // score < 0.5 强匹配 → 用检索结果增强回答
-    "       ├─ Results found (score < 0.5) → use retrieved QA to enhance your answer\n",
-    // score ≥ 0.5 弱匹配 → 用自身知识回答
-    "       ├─ Results found (score ≥ 0.5) → weak match, answer from your own knowledge\n",
-    // 无结果 → 必须解决问题，然后存储经验
-    "       └─ No results or no relevant match:\n",
-    "              1. Resolve the question by other means (web search, docs, reasoning)\n",
-    "              2. MUST call store_qa to save the resolved answer — this is NOT optional\n",
-    "              (Memory grows by filling gaps. Every miss is a future hit.)\n",
-    "       │\n",
-    "       ▼\n",
-    // 定期或用户要求时 → 合并相似 QA 对
-    "  Periodically (or on user request):\n",
-    "  merge_knowledge(topic=...)  → consolidates similar QA pairs\n",
+    "       ├─ score < 0.5 → strong match, use it\n",
+    "       ├─ score 0.5–1.0 → partial match, use as reference\n",
+    "       └─ no match → resolve by other means, then store_qa the answer\n",
+    "\n",
+    // 路径 B：对话中某件事突然变清晰了 → 直接存
+    "Path B — Something just became clear (with or without prior query):\n",
+    "  store_qa(question=<the uncertainty>, answer=<the resolution>, topic=...)\n",
+    "  Examples: bug root-cause found, user corrected you, config finally worked,\n",
+    "            non-obvious behavior discovered, web search resolved a question\n",
+    "\n",
+    // 定期合并
+    "Periodically: merge_knowledge(topic=...) → consolidates similar QA pairs\n",
     "```\n",
     "\n",
     // 资源模板：只读访问已合并的知识条目，适合被动上下文注入
@@ -112,20 +108,35 @@ const SERVER_INSTRUCTIONS: &str = concat!(
 // 持久化已验证的 QA 对到长期记忆。主题按语义自动去重(≥0.80)。
 // 重要：存之前先调 query_qa 检查。只存已验证的事实，不存推测性内容。
 const STORE_QA_DESC: &str = "\
-Persist a verified question-answer pair to long-term memory under a semantic topic. \
+Persist a question-answer pair to long-term memory under a semantic topic. \
 Topics are automatically deduplicated: if a semantically similar topic already exists (cosine similarity ≥ 0.80), \
 the existing topic name is reused instead of creating a duplicate. \
 IMPORTANT: Call query_qa first to check for existing knowledge before storing. \
-Only store facts that have been verified or confirmed — do not store speculative or uncertain information.";
+Only store facts that have been verified or confirmed — do not store speculative or uncertain information.\n\
+WHEN TO STORE — call this whenever something becomes clear during the conversation, \
+whether or not you queried memory beforehand: \
+- Something was confusing and now you understand why it works that way \
+- You tried something that failed, then found what actually works \
+- The user corrected your mistake or provided knowledge you didn't have \
+- You discovered non-obvious behavior through trial and error \
+- A debugging session revealed a root cause that wasn't immediately obvious \
+- A web search or doc lookup resolved an uncertainty — capture the answer here \
+The test: \"Did something just become clear that wasn't before?\" If yes, store it. \
+When in doubt, store — redundancy is safely handled by merge_knowledge.";
 
 // 两阶段语义搜索：先用 context 定位主题，再用 question 在主题内搜索。
 // 返回最多 5 条结果，score 是 L2 距离（0.0=精确匹配，>1.0=弱匹配）。
 // 应在 store_qa 之前调用以避免重复，也用于为用户问题检索上下文。
 const QUERY_QA_DESC: &str = "\
 Search long-term memory for relevant QA pairs using semantic similarity. \
-WHEN TO USE: Proactively call this tool when facing experience-dependent questions — \
-unfamiliar libraries, framework quirks, best practices, debugging patterns, configuration issues, \
-or any situation where past experience would help. Check here BEFORE searching the web or docs. \
+WHEN TO USE: Call this tool whenever you feel uncertain, hesitant, or less than fully \
+confident about a technical question — before searching the web or reasoning from scratch. \
+Signs you should check memory: \
+- You're about to guess or hedge (\"I think...\", \"probably...\", \"usually...\") \
+- You've seen similar issues before but can't recall the exact solution \
+- The question involves project-specific conventions, configurations, or past decisions \
+- You're unsure whether an approach will actually work \
+- You're about to search the web — check here first, it's faster \
 The search is two-phase: first, the `context` field is used to identify the most relevant topic; \
 then, the `question` field is used to find matching QA pairs within that topic. \
 Returns up to 5 results sorted by relevance. Each result includes a `score` field (L2 distance): \
