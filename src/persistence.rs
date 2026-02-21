@@ -195,6 +195,33 @@ async fn resolve_topic(
     Ok(topic_name.to_string())
 }
 
+// ── Windows Quick Access ──
+
+#[cfg(target_os = "windows")]
+pub fn pin_to_quick_access(data_dir: &Path) {
+    let path = data_dir.to_string_lossy();
+    let script = format!(
+        "(New-Object -ComObject shell.application).Namespace('{}').Self.InvokeVerb('pintohome')",
+        path.replace('\'', "''")
+    );
+    use std::os::windows::process::CommandExt;
+    match std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+        .output()
+    {
+        Ok(out) => {
+            if !out.status.success() {
+                tracing::debug!(
+                    "Pin to Quick Access failed: {}",
+                    String::from_utf8_lossy(&out.stderr).trim()
+                );
+            }
+        }
+        Err(e) => tracing::debug!("Pin to Quick Access skipped: {}", e),
+    }
+}
+
 // ── Sync on Startup ──
 
 pub async fn sync_on_startup(

@@ -149,6 +149,10 @@ async fn main() -> Result<()> {
         None => persistence::default_data_dir()?,
     };
     std::fs::create_dir_all(&data_dir)?;
+
+    #[cfg(target_os = "windows")]
+    persistence::pin_to_quick_access(&data_dir);
+
     let db_path_str = data_dir.to_string_lossy().to_string();
 
     tracing::info!("Loading embedding model from {}", args.model_dir);
