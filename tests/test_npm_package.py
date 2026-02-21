@@ -56,7 +56,7 @@ def test_npm_install(tmp_dir):
         json.dump(pkg, f)
 
     code, stdout, stderr = npm_run(
-        ["install", "qa-memorize-mcp@0.1.1", "--no-audit", "--no-fund"],
+        ["install", "qa-memorize-mcp@0.1.2", "--no-audit", "--no-fund"],
         cwd=tmp_dir, timeout=300,
     )
     test("npm install exits 0", code == 0, f"exit={code}\n{stderr[-500:]}")
@@ -175,7 +175,7 @@ def test_server_startup(tmp_dir):
             test("Server process alive", False, f"exited {proc.returncode}: {detail}")
             return
         try:
-            url = f"http://localhost:{hook_port}/api/recall?q=ping"
+            url = f"http://localhost:{hook_port}/api/recall?context=ping"
             urllib.request.urlopen(url, timeout=2)
             ready = True
             break
@@ -187,7 +187,7 @@ def test_server_startup(tmp_dir):
     if ready:
         # Test recall endpoint
         try:
-            url = f"http://localhost:{hook_port}/api/recall?q=test"
+            url = f"http://localhost:{hook_port}/api/recall?context=test"
             with urllib.request.urlopen(url, timeout=5) as resp:
                 data = json.loads(resp.read().decode())
                 test("Recall endpoint returns JSON array", isinstance(data, list))

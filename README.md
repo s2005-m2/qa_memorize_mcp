@@ -1,10 +1,148 @@
-# Memorize MCP
+# QA Memorize MCP
 
-AI 编程助手的跨会话记忆系统。通过 MCP 协议存储和检索 QA 对与知识条目，配合 Hook 机制在每次对话开始时自动召回相关记忆。
+[中文文档](docs/README.zh-CN.md)
 
-支持 Claude Code、Gemini CLI、OpenCode 三个客户端，通过 npm 一键安装。
+Why "QA Memorize"? Because that's exactly what it does: **remember the problem-solving experience of your Agent** (Question & Answer).
 
-## 架构
+Every time you chat with an AI coding agent — solving a bug, figuring out a concept, working through a tricky config — that experience vanishes when the session ends. QA Memorize MCP stores these QA pairs, distills them into knowledge, and automatically recalls relevant memories in future sessions, making your Agent smarter over time.
+
+## Features
+
+- **Store QA Pairs** — The agent stores valuable Q&A exchanges into a local vector database, auto-categorized by topic
+- **Semantic Search** — Retrieves related memories by semantic similarity, not keyword matching
+- **Knowledge Distillation** — Similar QA pairs are automatically merged into refined knowledge entries
+- **Auto Recall** — Hook scripts inject relevant memories into the system prompt at the start of every new conversation
+- **Shareable Knowledge** — All memories export to a human-readable `memorize_data.json` for team sharing, cross-device sync, or version control
+- **Fully Local & Free** — Built-in lightweight embedding model (384-dim) and embedded LanceDB vector database. All inference and storage runs on your machine — no cloud services, no API keys, your data never leaves your computer
+
+## Client Integration
+
+#### Claude Code
+
+**One-click Plugin install (recommended):**
+
+```bash
+/plugin marketplace add s2005-m2/qa_memorize_mcp
+/plugin install qa-memorize-mcp@s2005-m2
+```
+
+#### Gemini CLI
+
+**One-click Extension install (recommended):**
+
+```bash
+gemini extensions install https://github.com/s2005-m2/qa_memorize_mcp
+```
+
+
+#### OpenCode
+
+**Agent-oriented setup (recommended):**
+```agent
+Use `fetch` or `curl` to retrieve the contents of https://raw.githubusercontent.com/s2005-m2/qa_memorize_mcp/main/docs/opencode-agent-setup.md, read it, and follow the steps to complete the setup for the user.
+```
+
+## Download MCP
+
+```bash
+npx qa-memorize-mcp
+```
+
+One command to start. Automatically downloads platform-native binary + ONNX Runtime + embedding model. No Rust toolchain required.
+
+## MCP Tools
+
+### store_qa
+
+Store a QA pair. Topics are automatically deduplicated by semantic similarity.
+
+```json
+{ "question": "What is Rust's ownership?", "answer": "Rust manages memory at compile time through the ownership system.", "topic": "Rust Programming" }
+```
+
+### query_qa
+
+Semantic search for related QA pairs. Matches topics by context first, then searches within the topic.
+
+```json
+{ "question": "How does Rust manage memory?", "context": "Programming Languages" }
+```
+
+### merge_knowledge
+
+Scans similar QA pairs and uses MCP Sampling to request LLM to merge them into refined knowledge entries.
+
+```json
+{ "topic": "Rust Programming", "threshold": 0.85 }
+```
+
+### knowledge://{topic}/{query}
+
+Resource template. Retrieves merged knowledge entries by topic and semantic query.
+
+## Auto Recall API
+
+### GET /api/recall
+
+HTTP endpoint called by hook scripts. Matches topics by semantic similarity to the user's question and retrieves merged knowledge entries for injection into the system prompt. Requires `--hook-port` to enable.
+
+**Query Parameters:**
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `context` | Yes | — | User's original question text, used to match topics and search knowledge |
+| `limit` | No | `5` | Maximum number of results |
+
+**Response:** JSON array of Knowledge entries:
+
+```json
+[
+  {
+    "type": "knowledge",
+    "text": "Rust 的所有权系统通过编译期检查...",
+    "topic": "Rust 编程",
+    "score": 0.31
+  }
+]
+```
+
+`score` is L2 distance (lower = more similar). Returns empty array `[]` when no matches.
+
+**Recall Flow:**
+
+```
+User submits question
+    │
+    ▼
+Client Hook triggers
+    ├─ Claude Code: UserPromptSubmit event → memorize-hook.mjs
+    ├─ Gemini CLI:  BeforeAgent event     → memorize-hook.mjs
+    └─ OpenCode:    system.transform hook → opencode-plugin.mjs
+    │
+    │  GET http://localhost:19533/api/recall?context=<question>&limit=5
+    │  2s timeout, silent failure (never blocks user interaction)
+    │
+    ▼
+Hook Server (hook.rs)
+    Vectorize context → match most similar topic → search Knowledge within topic
+    │
+    ▼
+Hook script formats results → inject into system prompt
+    "[Memory Recall]\nKnowledge: ..."
+```
+
+## CLI Arguments
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--transport` | `stdio` | Transport mode: `stdio` or `http` |
+| `--port` | `19532` | HTTP mode listen port |
+| `--hook-port` | _(disabled)_ | Hook HTTP Server port (enables `/api/recall`) |
+| `--db-path` | `~/.memorize-mcp` | LanceDB database path and JSON snapshot directory |
+| `--model-dir` | `./embedding_model` | Embedding model directory |
+| `--debug` | _(disabled)_ | Output debug logs to stderr |
+
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -37,206 +175,110 @@ AI 编程助手的跨会话记忆系统。通过 MCP 协议存储和检索 QA �
 └─────────────────┘          └─────────────────────┘
 ```
 
-系统由两部分组成：
+The system consists of two parts:
 
-- **MCP Server** — 标准 MCP 协议，提供 store_qa / query_qa / merge_knowledge 三个工具，AI 助手通过它存储和检索记忆
-- **Hook HTTP Server** — 轻量 HTTP 端点 (`/api/recall`)，Hook 脚本在每次用户提问时调用它，将相关记忆注入到 system prompt 中
+- **MCP Server** — Standard MCP protocol, providing store_qa / query_qa / merge_knowledge tools for the AI agent to store and retrieve memories
+- **Hook HTTP Server** — Lightweight HTTP endpoint (`/api/recall`), called by hook scripts on each user question to inject relevant memories into the system prompt
 
-## 技术栈
+## Tech Stack
 
-| 组件 | 技术 |
-|------|------|
-| 语言 | Rust (edition 2024) |
+| Component | Technology |
+|-----------|------------|
+| Language | Rust (edition 2024) |
 | MCP SDK | rmcp v0.15 (stdio + Streamable HTTP) |
 | Hook Server | axum (HTTP) |
-| 向量存储 | LanceDB v0.26 (本地嵌入式) |
-| Embedding 推理 | ONNX Runtime v1.23+ (通过 ort crate, 动态加载) |
+| Vector Store | LanceDB v0.26 (local embedded) |
+| Embedding Inference | ONNX Runtime v1.23+ (via ort crate, dynamically loaded) |
 | Tokenizer | tokenizers v0.21 |
-| 向量维度 | 384 维 |
-| npm 分发 | 平台包模式 (esbuild-style optional dependencies) |
+| Vector Dimensions | 384 |
+| npm Distribution | Platform packages (esbuild-style optional dependencies) |
 
-## 特性
+## Highlights
 
-- **完全本地、完全免费** — 所有推理和存储都在本机完成，无需云服务、无需 API key、无需付费
-- **自动记忆召回** — Hook 脚本嵌入客户端工作流，每次对话自动注入相关记忆，无需手动操作
-- **知识可分享** — 所有记忆导出为人类可读的 `memorize_data.json`，可在团队成员间分享、跨设备同步、纳入版本控制
-- **无侵入嵌入** — 通过客户端原生的 Plugin/Hook/Extension 机制接入，不修改客户端本身
-- **语义融合** — 相似 QA 自动融合为精炼知识条目，记忆越用越精准
+- **Fully Local & Free** — All inference and storage on your machine, no cloud services, no API keys, no fees
+- **Auto Memory Recall** — Hook scripts integrate into client workflows, automatically injecting relevant memories each conversation
+- **Shareable Knowledge** — All memories export to human-readable `memorize_data.json` for team sharing, cross-device sync, or version control
+- **Non-invasive Integration** — Plugs in via native Plugin/Hook/Extension mechanisms without modifying the client itself
+- **Semantic Merging** — Similar QA pairs automatically merge into refined knowledge entries
 
-## 快速开始
-
-```bash
-npx qa-memorize-mcp
-```
-
-一行命令启动。自动下载平台原生二进制 + ONNX Runtime + Embedding 模型，无需 Rust 工具链。
-
-### 客户端配置
-
-#### Claude Code
-
-```bash
-claude mcp add memorize -- npx -y qa-memorize-mcp --hook-port 19533
-```
-
-#### Gemini CLI
-
-在 `.gemini/settings.json` 中添加：
-```json
-{
-  "mcpServers": {
-    "qa-memorize-mcp": {
-      "command": "npx",
-      "args": ["-y", "qa-memorize-mcp", "--hook-port", "19533"]
-    }
-  }
-}
-```
-
-#### OpenCode
-
-在 `opencode.json` 中添加：
-```json
-{
-  "mcp": {
-    "memorize": {
-      "type": "local",
-      "command": ["npx", "-y", "qa-memorize-mcp", "--hook-port", "19533"],
-      "enabled": true
-    }
-  }
-}
-```
-
-### Hook 配置（自动召回）
-
-MCP 服务启动后，配置客户端 Hook 即可实现每次对话自动召回相关记忆：
-
-- **Claude Code** — 将 `hooks/claude-code-settings.json` 合并到 `.claude/settings.json`，或使用 Plugin 一键安装
-- **Gemini CLI** — 将 `hooks/gemini-cli-settings.json` 合并到 `.gemini/settings.json`
-- **OpenCode** — 将 `hooks/opencode-config.json` 合并到 `opencode.json`
-
-Hook 脚本 (`memorize-hook.mjs`) 在用户每次提问时调用 `/api/recall` 端点，将语义匹配的 QA 和知识条目注入到 system prompt。
-
-## MCP 工具
-
-### store_qa
-
-存储一条 QA 对。主题自动按语义去重。
-
-```json
-{ "question": "Rust 的所有权机制是什么？", "answer": "Rust 通过所有权系统在编译期管理内存。", "topic": "Rust 编程" }
-```
-
-### query_qa
-
-语义检索相关 QA 对。先用 context 匹配主题，再在主题内搜索。
-
-```json
-{ "question": "Rust 如何管理内存？", "context": "编程语言" }
-```
-
-### merge_knowledge
-
-扫描相似 QA 对，通过 MCP Sampling 请求 LLM 融合为精炼知识条目。
-
-```json
-{ "topic": "Rust 编程", "threshold": 0.85 }
-```
-
-### knowledge://{topic}/{query}
-
-资源模板。按主题和查询语义检索已融合的知识条目。
-
-## 命令行参数
-
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `--transport` | `stdio` | 传输模式：`stdio` 或 `http` |
-| `--port` | `19532` | HTTP 模式监听端口 |
-| `--hook-port` | _(关闭)_ | Hook HTTP Server 端口（启用后提供 `/api/recall`） |
-| `--db-path` | `~/.memorize-mcp` | LanceDB 数据库路径及 JSON 快照目录 |
-| `--model-dir` | `./embedding_model` | Embedding 模型目录 |
-| `--debug` | _(关闭)_ | 输出调试日志到 stderr |
-
-## 项目结构
+## Project Structure
 
 ```
 memorize_mcp/
 ├── src/
-│   ├── main.rs             # CLI 入口 + 传输层
-│   ├── server.rs           # MCP 服务器 (3 tools + 1 resource)
+│   ├── main.rs             # CLI entry + transport layer
+│   ├── server.rs           # MCP server (3 tools + 1 resource)
 │   ├── hook.rs             # Hook HTTP Server (axum, /api/recall)
-│   ├── embedding.rs        # ONNX 推理引擎
-│   ├── storage.rs          # LanceDB 存储层 (3 tables)
-│   ├── persistence.rs      # JSON 快照导出 + 启动时双向同步
+│   ├── embedding.rs        # ONNX inference engine
+│   ├── storage.rs          # LanceDB storage layer (3 tables)
+│   ├── persistence.rs      # JSON snapshot export + bidirectional sync on startup
 │   ├── transport.rs        # Resilient stdio transport
-│   ├── models.rs           # 数据模型 + 常量
-│   └── lib.rs              # 模块导出
+│   ├── models.rs           # Data models + constants
+│   └── lib.rs              # Module exports
 ├── hooks/
-│   ├── memorize-hook.mjs       # Hook 脚本 (Claude Code / Gemini CLI)
-│   ├── opencode-plugin.mjs     # OpenCode 插件
-│   ├── hooks.json              # Claude Code Plugin hooks 定义
+│   ├── memorize-hook.mjs       # Hook script (Claude Code / Gemini CLI)
+│   ├── opencode-plugin.mjs     # OpenCode plugin
+│   ├── hooks.json              # Claude Code Plugin hooks definition
 │   ├── claude-code-settings.json
 │   ├── gemini-cli-settings.json
 │   └── opencode-config.json
 ├── npm/
-│   ├── qa-memorize-mcp/            # 主包 (bin/run.js 入口)
-│   ├── qa-memorize-mcp-win-x64/    # Windows 平台包
-│   ├── qa-memorize-mcp-linux-x64/  # Linux 平台包
-│   ├── qa-memorize-mcp-darwin-x64/ # macOS Intel 平台包
-│   └── qa-memorize-mcp-darwin-arm64/ # macOS ARM 平台包
+│   ├── qa-memorize-mcp/            # Main package (bin/run.js entry)
+│   ├── qa-memorize-mcp-win-x64/    # Windows platform package
+│   ├── qa-memorize-mcp-linux-x64/  # Linux platform package
+│   ├── qa-memorize-mcp-darwin-x64/ # macOS Intel platform package
+│   └── qa-memorize-mcp-darwin-arm64/ # macOS ARM platform package
 ├── scripts/
-│   ├── package.py          # 跨平台打包
-│   ├── bump-version.js     # 版本号统一管理
-│   ├── compress-model.mjs  # 模型 gzip 压缩
-│   ├── pack-npm.py         # npm 平台包组装
-│   └── publish.py          # 手动 npm 发布
+│   ├── package.py          # Cross-platform packaging
+│   ├── bump-version.js     # Unified version management
+│   ├── compress-model.mjs  # Model gzip compression
+│   ├── pack-npm.py         # npm platform package assembly
+│   └── publish.py          # Manual npm publish
 ├── .github/workflows/
-│   └── npm-publish.yml     # CI: 4 平台构建 + npm 发布
+│   └── npm-publish.yml     # CI: 4-platform build + npm publish
 ├── .claude-plugin/         # Claude Code Plugin manifest
 ├── commands/recall.md      # /recall slash command
-├── gemini-extension/       # Gemini CLI Extension 配置
-├── marketplace.json        # Claude Code Plugin Marketplace
+├── gemini-extension/       # Gemini CLI Extension config
+├── .claude-plugin/         # Claude Code Plugin (marketplace.json + plugin.json)
 └── tests/
-    ├── integration.rs      # Rust 端到端集成测试
-    ├── test_npm_package.py # npm 包端到端测试
-    └── test_hooks.py       # Hook 系统功能测试
+    ├── integration.rs      # End-to-end integration tests
+    ├── test_npm_package.py # npm package e2e tests
+    └── test_hooks.py       # Hook system tests
 ```
 
-## 数据存储与分享
+## Data Storage & Sharing
 
-默认数据目录为 `~/.memorize-mcp/`（可通过 `--db-path` 覆盖）。
+Default data directory is `~/.memorize-mcp/` (override with `--db-path`).
 
 ```
 ~/.memorize-mcp/
-├── *.lance, ...           # LanceDB 持久化文件
-└── memorize_data.json     # 人类可读的 JSON 快照
+├── *.lance, ...           # LanceDB persistence files
+└── memorize_data.json     # Human-readable JSON snapshot
 ```
 
-`memorize_data.json` 是所有记忆的完整快照，可以：
-- 在团队成员间分享（复制文件即可）
-- 跨设备同步（放入 Dropbox / iCloud / Git 仓库）
-- 纳入版本控制，追踪知识演变
+`memorize_data.json` is a complete snapshot of all memories. You can:
+- Share between team members (just copy the file)
+- Sync across devices (put in Dropbox / iCloud / Git repo)
+- Version control to track knowledge evolution
 
-启动时自动双向同步：JSON 中有而 LanceDB 中没有的记录写入 LanceDB，反之亦然。即使 LanceDB 文件损坏，也可从 JSON 恢复。
+Bidirectional sync on startup: records in JSON but not in LanceDB are written to LanceDB, and vice versa. Even if LanceDB files are corrupted, recovery from JSON is possible.
 
-## 从源码构建
+## Build from Source
 
 ```bash
-# 前置条件：Rust toolchain, ONNX Runtime >= 1.23, embedding_model/
+# Prerequisites: Rust toolchain, ONNX Runtime >= 1.23, embedding_model/
 cargo build --release
 ./target/release/memorize_mcp --hook-port 19533
 ```
 
-## 测试
+## Tests
 
 ```bash
-cargo test -- --test-threads=1          # 全部测试
-cargo test --lib -- --test-threads=1    # 仅单元测试
-cargo test --test integration -- --test-threads=1  # 仅集成测试
+cargo test -- --test-threads=1          # All tests
+cargo test --lib -- --test-threads=1    # Unit tests only
+cargo test --test integration -- --test-threads=1  # Integration tests only
 ```
 
 ## License
 
-MIT
+LGPL-3.0-or-later

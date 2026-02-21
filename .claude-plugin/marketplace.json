@@ -1,0 +1,11 @@
+{
+  "name": "qa-memorize-mcp",
+  "owner": { "name": "s2005-m2" },
+  "plugins": [
+    {
+      "name": "qa-memorize-mcp",
+      "description": "RAG memory with auto-recall — stores QA pairs, retrieves context automatically",
+      "source": "./"
+    }
+  ]
+}

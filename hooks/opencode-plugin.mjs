@@ -1,28 +1,32 @@
 // OpenCode plugin for memorize_mcp auto-recall
-// Uses chat.params hook to inject RAG context before every LLM call
+// Uses experimental.chat.system.transform to inject RAG context into system prompt
 
-export default function(input) {
+export default function({ client }) {
   const port = process.env.MEMORIZE_HOOK_PORT || "19533";
   const limit = process.env.MEMORIZE_RECALL_LIMIT || "5";
+  let lastUserMessage = "";
 
   return {
-    "chat.params": async ({ input: params, output }) => {
+    "chat.message": async (input, output) => {
+      lastUserMessage = (output.parts || [])
+        .filter(p => p.type === "text")
+        .map(p => p.text || "")
+        .join("") || "";
+    },
+    "experimental.chat.system.transform": async (input, output) => {
       try {
-        const msg = typeof params.message === "string"
-          ? params.message
-          : params.message?.content || "";
-        if (!msg) return output;
+        if (!lastUserMessage) return;
 
-        const url = `http://localhost:${port}/api/recall?q=${encodeURIComponent(msg)}&limit=${limit}`;
+        const url = `http://localhost:${port}/api/recall?context=${encodeURIComponent(lastUserMessage)}&limit=${limit}`;
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 2000);
 
         const resp = await fetch(url, { signal: controller.signal });
         clearTimeout(timeout);
 
-        if (!resp.ok) return output;
+        if (!resp.ok) return;
         const results = await resp.json();
-        if (!results.length) return output;
+        if (!results.length) return;
 
         const lines = results.map(r => {
           if (r.type === "qa") return `Q: ${r.question}\nA: ${r.answer}`;
@@ -30,19 +34,10 @@ export default function(input) {
           return "";
         }).filter(Boolean);
 
-        if (!lines.length) return output;
-        const context = "[Memory Recall]\n" + lines.join("\n---\n");
-
-        return {
-          ...output,
-          options: {
-            ...output.options,
-            system: (output.options?.system || "") + "\n\n" + context,
-          },
-        };
-      } catch {
-        return output;
-      }
+        if (lines.length) {
+          output.system.push("[Memory Recall]\n" + lines.join("\n---\n"));
+        }
+      } catch {}
     },
   };
 }

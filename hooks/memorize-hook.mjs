@@ -7,7 +7,7 @@ import { stdin } from "node:process";
 import http from "node:http";
 
 function recall(prompt, port, limit) {
-  const url = `http://localhost:${port}/api/recall?q=${encodeURIComponent(prompt)}&limit=${limit}`;
+  const url = `http://localhost:${port}/api/recall?context=${encodeURIComponent(prompt)}&limit=${limit}`;
   return new Promise((resolve) => {
     const req = http.get(url, { timeout: 2000 }, (res) => {
       let body = "";

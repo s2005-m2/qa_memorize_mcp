@@ -1,12 +1,11 @@
 {
   "hooks": {
-    "UserPromptSubmit": [
+    "BeforeAgent": [
       {
-        "matcher": "",
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/memorize-hook.mjs\""
+            "command": "node ${extensionPath}/hooks/memorize-hook.mjs"
           }
         ]
       }

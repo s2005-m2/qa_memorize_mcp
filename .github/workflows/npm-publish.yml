@@ -3,6 +3,7 @@ name: Build & Publish npm
 on:
   push:
     tags: ['v*']
+    branches: ['publish']
   workflow_dispatch:
     inputs:
       dry_run:
@@ -50,6 +51,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/cache@v4
         with:
@@ -141,6 +147,14 @@ jobs:
           else
             node scripts/bump-version.js
           fi
+
+      - name: Export embedding model
+        run: |
+          pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cpu --quiet
+          pip install transformers==4.57.6 onnxruntime==1.24.1 onnx --quiet
+          python embedding_model/export_model.py
+          python -c "from transformers import AutoTokenizer; AutoTokenizer.from_pretrained('sentence-transformers/all-MiniLM-L12-v2').save_pretrained('embedding_model/tokenizer_tmp')"
+          cp embedding_model/tokenizer_tmp/tokenizer.json embedding_model/tokenizer.json
 
       - name: Pack npm platform packages
         shell: bash

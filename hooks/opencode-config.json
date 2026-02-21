@@ -1,14 +1,15 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugins": {
-    "memorize-recall": {
-      "path": "<PATH_TO_MEMORIZE>/hooks/opencode-plugin.mjs"
-    }
-  },
   "mcp": {
     "memorize": {
       "type": "local",
-      "command": ["npx", "-y", "qa-memorize-mcp", "--hook-port", "19533"],
+      "command": [
+        "npx",
+        "-y",
+        "qa-memorize-mcp",
+        "--hook-port",
+        "19533"
+      ],
       "enabled": true
     }
   }
